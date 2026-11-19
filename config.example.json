@@ -1,0 +1,36 @@
+{
+  "_readme": "Copy this file to config.json (git-ignored) and edit it. Paths may use %USERPROFILE%. Relative paths are relative to this project folder.",
+  "cabinet_root": "%USERPROFILE%\\Documents\\Family",
+  "review_root": "%USERPROFILE%\\Documents\\To Review",
+  "index_db": "%USERPROFILE%\\Documents\\Family\\_index\\index.db",
+  "exceptions": "plans\\check-exceptions.txt",
+  "timezone": "America/New_York",
+  "you": "You",
+  "people": {
+    "You": ["you", "<your-nickname>"],
+    "Spouse": ["spouse", "<spouse-nickname>"],
+    "Kid1": ["kid1"],
+    "Kid2": ["kid2"],
+    "Parents": ["parents"]
+  },
+  "children": ["Kid1", "Kid2"],
+  "folders": [
+    "00 Inbox",
+    "10 Identity",
+    "15 Travel",
+    "20 Health",
+    "30 Home",
+    "40 Money",
+    "50 Legal",
+    "60 Work",
+    "65 Learning",
+    "70 Kids",
+    "75 You",
+    "80 Photos"
+  ],
+  "extra_roots": [],
+  "_extra_roots_example": [
+    { "name": "external-drive", "path": "E:\\Family" }
+  ],
+  "ghostscript": ""
+}

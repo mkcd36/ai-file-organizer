@@ -1,0 +1,6 @@
+---
+description: Project rules for the file-organizer-kit (points to AGENTS.md)
+alwaysApply: true
+---
+
+Read and follow `AGENTS.md` at the project root before doing anything. It holds every rule for this project and tells you to read `README.md` first.

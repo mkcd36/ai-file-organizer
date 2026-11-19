@@ -1,0 +1,479 @@
+{
+  "description": "Editable sort rules for Sonar (ssort and the Sort a folder tab). First matching rule wins. dest is relative to the cabinet root unless it starts with 'For Deletion\\\\'. Placeholders: {year}, {person}, {child}, {photo_year}, {you}, {you_folder}. People, children and the cabinet/review roots come from config.json (see config.example.json). Low-confidence or unmatched files go to 00 Inbox. Point dests at the subfolders you approved; add rules for your own bank, brokerage or employer by name.",
+  "inbox": "00 Inbox",
+  "low_confidence": 0.6,
+  "text_only_scale": 0.8,
+  "rules": [
+    {
+      "id": "installers",
+      "description": "Windows installers and setup programs",
+      "match": {
+        "extensions": [
+          ".exe",
+          ".msi",
+          ".msix",
+          ".msp",
+          ".appx"
+        ]
+      },
+      "match_mode": "all",
+      "dest": "For Deletion\\Downloads junk",
+      "confidence": 0.95
+    },
+    {
+      "id": "installer_archives",
+      "description": "Zip/7z/rar/iso archives that look like installers",
+      "match": {
+        "extensions": [
+          ".zip",
+          ".7z",
+          ".rar",
+          ".iso"
+        ],
+        "keywords": [
+          "setup",
+          "installer",
+          "install",
+          "x64",
+          "win64",
+          "multilingual",
+          "repack",
+          "full version"
+        ]
+      },
+      "match_mode": "all",
+      "dest": "For Deletion\\Downloads junk",
+      "confidence": 0.88
+    },
+    {
+      "id": "tax_forms",
+      "description": "Tax forms: W-2, 1099, 1098, 1095, 1040, tax returns",
+      "match": {
+        "filename_regex": "(?<![0-9])(1099|1098|1095|1040|w-?2)(?![0-9])",
+        "keywords": [
+          "1099",
+          "1098",
+          "1095",
+          "w-2",
+          "w2",
+          "1040",
+          "tax return",
+          "tax form",
+          "tax transcript",
+          "irs",
+          "mortgage interest statement"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "40 Money\\Taxes\\{year}_Tax",
+      "confidence": 0.92
+    },
+    {
+      "id": "passports",
+      "description": "Passport books and passport cards, not passport photos",
+      "match": {
+        "filename_regex": "passport(?!\\s*photo)",
+        "keywords": [
+          "passport card",
+          "passportbook",
+          "passport_card"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "10 Identity\\Passports",
+      "confidence": 0.9
+    },
+    {
+      "id": "identity_ids",
+      "description": "Driver licenses, state IDs, birth certificates, Social Security cards",
+      "match": {
+        "filename_regex": "(?<![a-z])dl(?![a-z])|drivers?[_ -]?licen[cs]e|state[_ -]?id|birth[_ -]?cert|social[_ -]?security|(?<![a-z])ssn(?![a-z])",
+        "keywords": [
+          "driver license",
+          "drivers license",
+          "driver's license",
+          "state id",
+          "birth certificate",
+          "social security",
+          "ssn"
+        ],
+        "use_text": false
+      },
+      "match_mode": "any",
+      "dest": "10 Identity\\IDs",
+      "confidence": 0.9
+    },
+    {
+      "id": "insurance_cards",
+      "description": "Insurance card scans (front/back), not benefit statements",
+      "match": {
+        "filename_regex": "insurance[_ -]?card|member[_ -]?id[_ -]?card|_front\\.|_back\\.",
+        "keywords": [
+          "insurance card",
+          "member id card"
+        ],
+        "use_text": false
+      },
+      "match_mode": "any",
+      "dest": "10 Identity\\Insurance Cards",
+      "confidence": 0.86
+    },
+    {
+      "id": "kids_school",
+      "description": "School records; needs a child token (Kid1, Kid2) to file under 70 Kids",
+      "match": {
+        "keywords": [
+          "school",
+          "report card",
+          "student council",
+          "iep",
+          "pta",
+          "homework",
+          "classroom",
+          "transcript",
+          "kindergarten",
+          "grade card",
+          "parent teacher"
+        ]
+      },
+      "match_mode": "all",
+      "dest": "70 Kids\\{child}\\{child}_School",
+      "confidence": 0.88,
+      "requires": "child"
+    },
+    {
+      "id": "health_records",
+      "description": "Medical, dental, vision, pharmacy and lab records for a detected person",
+      "match": {
+        "keywords": [
+          "dental",
+          "orthodont",
+          "pharmacy",
+          "eob",
+          "explanation of benefits",
+          "lab result",
+          "x-ray",
+          "xray",
+          "vision",
+          "prescription",
+          "clinic",
+          "pediatric",
+          "immunization",
+          "vaccine",
+          "doctor"
+        ]
+      },
+      "match_mode": "all",
+      "dest": "20 Health\\{person}",
+      "confidence": 0.86,
+      "requires": "person"
+    },
+    {
+      "id": "mortgage",
+      "description": "Mortgage statements, payoff letters, escrow analyses (1098 is a tax rule above)",
+      "match": {
+        "keywords": [
+          "mortgage statement",
+          "mortgage",
+          "escrow",
+          "payoff letter",
+          "loan servicing",
+          "refinance"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "30 Home\\Mortgage",
+      "confidence": 0.86
+    },
+    {
+      "id": "property",
+      "description": "Deeds, closing documents, appraisals, HOA",
+      "match": {
+        "keywords": [
+          "deed",
+          "appraisal",
+          "hoa",
+          "closing disclosure",
+          "title insurance",
+          "property tax"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "30 Home\\Property",
+      "confidence": 0.84
+    },
+    {
+      "id": "utilities",
+      "description": "Utility and household bills",
+      "match": {
+        "keywords": [
+          "utility bill",
+          "water bill",
+          "electric bill",
+          "gas bill",
+          "sewer",
+          "internet bill",
+          "trash",
+          "electricity"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "30 Home\\Bills and Utilities",
+      "confidence": 0.86
+    },
+    {
+      "id": "vehicles",
+      "description": "Vehicle title, registration, auto insurance",
+      "match": {
+        "keywords": [
+          "vehicle title",
+          "car title",
+          "registration",
+          "vin",
+          "auto insurance",
+          "car insurance",
+          "license plate"
+        ],
+        "use_text": false
+      },
+      "match_mode": "any",
+      "dest": "30 Home\\Vehicles",
+      "confidence": 0.82
+    },
+    {
+      "id": "home_projects",
+      "description": "Home project quotes and receipts (rename the folder per project)",
+      "match": {
+        "keywords": [
+          "remodel",
+          "renovation",
+          "contractor",
+          "quote",
+          "estimate"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "30 Home\\Projects",
+      "confidence": 0.8
+    },
+    {
+      "id": "manuals",
+      "description": "Product manuals",
+      "match": {
+        "keywords": [
+          "manual",
+          "user guide",
+          "userguide",
+          "owner's manual"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "30 Home\\Manuals",
+      "confidence": 0.8
+    },
+    {
+      "id": "warranties",
+      "description": "Home and appliance warranties, home insurance",
+      "match": {
+        "keywords": [
+          "warranty",
+          "warranties",
+          "homeowners insurance",
+          "home insurance"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "30 Home\\Insurance and Warranties",
+      "confidence": 0.82
+    },
+    {
+      "id": "bank_statements",
+      "description": "Bank account statements",
+      "match": {
+        "keywords": [
+          "bank statement",
+          "checking statement",
+          "savings statement",
+          "account statement"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "40 Money\\Banking",
+      "confidence": 0.84
+    },
+    {
+      "id": "investments",
+      "description": "Brokerage statements and trade confirmations",
+      "match": {
+        "keywords": [
+          "brokerage",
+          "trade confirmation",
+          "trade confirm",
+          "investment statement"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "40 Money\\Investments",
+      "confidence": 0.84
+    },
+    {
+      "id": "retirement",
+      "description": "401(k), IRA, pension and HSA statements",
+      "match": {
+        "keywords": [
+          "401k",
+          "401(k)",
+          "ira",
+          "roth",
+          "pension",
+          "hsa"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "40 Money\\Retirement",
+      "confidence": 0.82
+    },
+    {
+      "id": "receipts",
+      "description": "Purchase receipts and invoices",
+      "match": {
+        "keywords": [
+          "receipt",
+          "invoice",
+          "order confirmation"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "40 Money\\Receipts",
+      "confidence": 0.75
+    },
+    {
+      "id": "travel",
+      "description": "Trip itineraries and travel bookings",
+      "match": {
+        "keywords": [
+          "itinerary",
+          "boarding pass",
+          "flight",
+          "hotel reservation",
+          "booking confirmation",
+          "cruise",
+          "trip idea"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "15 Travel\\Trips",
+      "confidence": 0.84
+    },
+    {
+      "id": "estate_planning",
+      "description": "Wills, trusts, powers of attorney, advance directives",
+      "match": {
+        "keywords": [
+          "last will",
+          "revocable trust",
+          "power of attorney",
+          "advance directive",
+          "estate planning",
+          "living will",
+          "beneficiary designation"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "50 Legal\\Estate Planning",
+      "confidence": 0.9
+    },
+    {
+      "id": "leases",
+      "description": "Leases and rental agreements",
+      "match": {
+        "keywords": [
+          "lease",
+          "rental agreement",
+          "tenancy"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "50 Legal\\Leases",
+      "confidence": 0.84
+    },
+    {
+      "id": "contracts",
+      "description": "Contracts and signed agreements",
+      "match": {
+        "keywords": [
+          "contract",
+          "agreement",
+          "terms of service signed"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "50 Legal\\Contracts",
+      "confidence": 0.75
+    },
+    {
+      "id": "resume_career",
+      "description": "Resumes, cover letters, certifications",
+      "match": {
+        "keywords": [
+          "resume",
+          "curriculum vitae",
+          "cover letter",
+          "certification"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "60 Work\\Career",
+      "confidence": 0.84
+    },
+    {
+      "id": "employment",
+      "description": "Offer letters, pay stubs, performance reviews (add a rule per employer if you like)",
+      "match": {
+        "keywords": [
+          "offer letter",
+          "pay stub",
+          "paystub",
+          "performance review",
+          "employment verification"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "60 Work\\Employers",
+      "confidence": 0.82
+    },
+    {
+      "id": "personal_misc",
+      "description": "Diplomas, certificates, memberships and keepsakes",
+      "match": {
+        "keywords": [
+          "diploma",
+          "certificate",
+          "membership",
+          "transcript"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "{you_folder}\\Miscellaneous Personal Docs",
+      "confidence": 0.7
+    },
+    {
+      "id": "dated_photos",
+      "description": "Dated photos into the year folder",
+      "match": {
+        "extensions": [
+          ".jpg",
+          ".jpeg",
+          ".png",
+          ".heic",
+          ".webp",
+          ".avif"
+        ],
+        "filename_regex": "photo[_-]?20\\d{2}-\\d{2}-\\d{2}|_20\\d{2}-\\d{2}-\\d{2}.*\\.(jpg|jpeg|png|heic)$"
+      },
+      "match_mode": "all",
+      "dest": "80 Photos\\{photo_year}",
+      "confidence": 0.8
+    }
+  ]
+}

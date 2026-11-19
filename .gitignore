@@ -1,0 +1,19 @@
+# Your personal settings (copy config.example.json to config.json)
+config.json
+
+# Index databases contain text extracted from your documents
+_index/
+*.db
+*.db-wal
+*.db-shm
+
+# Session logs, manifests, undo logs, locks: personal file paths
+plans/
+
+# Python / editor clutter
+__pycache__/
+*.pyc
+
+# Backups
+*.bak*
+*-backup-*

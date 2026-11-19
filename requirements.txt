@@ -1,0 +1,14 @@
+# Core (index, search, preview, sort)
+pymupdf
+pypdf
+python-docx
+openpyxl
+python-pptx
+pillow
+
+# Optional: preview iPhone HEIC photos
+# pillow-heif
+
+# Optional: OCR for scanned PDFs (sonar_ocr.py). Also needs the Tesseract and
+# Ghostscript programs installed and on PATH (see README section 6).
+# ocrmypdf
