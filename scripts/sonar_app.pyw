@@ -12,9 +12,11 @@ runs the active tab's primary action, Ctrl+1/2/3 switch tabs.
 from __future__ import annotations
 
 import os
+import queue
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
@@ -62,6 +64,35 @@ EBOOKS_TYPE = "eBooks"
 EXPIRY_PRESETS = (30, 90, 180, 365)
 WIDEN_STEPS = (30, 90, 180, 365, 730)
 HEALTH_POLL_MS = 30_000
+PREVIEW_WIDTH = 360  # right-hand preview pane; drag the divider to resize
+UI_POLL_MS = 15
+ROW_CHUNK = 120  # rows inserted per Tk tick, so large result sets never block the window
+
+# Worker threads never touch Tk. They post callables here and the main
+# thread drains the queue every UI_POLL_MS (see SonarApp._drain_ui_queue).
+_UI_QUEUE: "queue.Queue" = queue.Queue()
+
+
+def post_ui(fn) -> None:
+    _UI_QUEUE.put(fn)
+
+
+def drive_key(path: Path | str) -> str:
+    return Path(path).drive.upper() or "/"
+
+
+def probe_drives(paths) -> dict[str, bool]:
+    """{drive: online} for every drive in paths. Touches the disks: call off the main thread."""
+    out: dict[str, bool] = {}
+    for path in paths:
+        key = drive_key(path)
+        if key not in out:
+            out[key] = disconnected_drive_message(path) is None
+    return out
+
+
+def unplugged_message(key: str) -> str:
+    return f"Drive {key} is not connected. Plug in the drive to preview or open this file."
 SORT_EMPTY_TITLE = "See where every file would go \u2014 before anything moves."
 SORT_EMPTY_HINT = "Pick a folder, then press Scan & Preview. Nothing moves until you apply."
 SAFETY_LINE = (
@@ -134,7 +165,7 @@ def format_mtime(mtime_ns: int) -> str:
 class PreviewPane(ttk.Frame):
     """Preview: image, text, or metadata, rendered in a thread."""
 
-    def __init__(self, master: tk.Misc, status_cb=None) -> None:
+    def __init__(self, master: tk.Misc, status_cb=None, blocked_cb=None) -> None:
         super().__init__(master)
         self._gen = 0
         self._path: Path | None = None
@@ -146,6 +177,8 @@ class PreviewPane(ttk.Frame):
         self._note = ""
         self._retry = None
         self._status_cb = status_cb
+        self._blocked_cb = blocked_cb
+        self._exists = False
         self._build()
 
     def _build(self) -> None:
@@ -153,16 +186,16 @@ class PreviewPane(ttk.Frame):
         self.rowconfigure(4, weight=1)
 
         self.title_var = tk.StringVar(value="Preview")
-        ttk.Label(self, textvariable=self.title_var, font=("", 10, "bold"), wraplength=960).grid(
+        ttk.Label(self, textvariable=self.title_var, font=("", 10, "bold"), wraplength=PREVIEW_WIDTH - 24).grid(
             row=0, column=0, sticky="ew", padx=10, pady=(8, 2)
         )
         self.details_var = tk.StringVar(value="Select a file to preview.")
-        ttk.Label(self, textvariable=self.details_var, wraplength=960, justify="left").grid(
+        ttk.Label(self, textvariable=self.details_var, wraplength=PREVIEW_WIDTH - 24, justify="left").grid(
             row=1, column=0, sticky="ew", padx=10, pady=(0, 4)
         )
         self.note_var = tk.StringVar(value="")
         self.note_label = ttk.Label(
-            self, textvariable=self.note_var, wraplength=960, justify="left", style="Note.TLabel"
+            self, textvariable=self.note_var, wraplength=PREVIEW_WIDTH - 24, justify="left", style="Note.TLabel"
         )
 
         btns = ttk.Frame(self)
@@ -197,9 +230,20 @@ class PreviewPane(ttk.Frame):
         self.text.configure(yscrollcommand=self.text_scroll.set)
 
         self.message_var = tk.StringVar(value="")
-        self.message = ttk.Label(body, textvariable=self.message_var, wraplength=960, justify="left")
+        self.message = ttk.Label(body, textvariable=self.message_var, wraplength=PREVIEW_WIDTH - 24, justify="left")
 
         self._show_message("Select a file to preview.")
+        self._wrap_labels = [w for w in self.winfo_children() if isinstance(w, ttk.Label)] + [self.message]
+        self.bind("<Configure>", self._on_resize, add="+")
+
+    def _on_resize(self, event: tk.Event) -> None:
+        wrap = max(event.width - 24, 120)
+        for label in self._wrap_labels:
+            try:
+                if int(str(label.cget("wraplength")) or 0) != wrap:
+                    label.configure(wraplength=wrap)
+            except (tk.TclError, ValueError):
+                pass
 
     def set_note(self, note: str) -> None:
         """One consequence line under the details (for example, where a file will move)."""
@@ -237,7 +281,7 @@ class PreviewPane(ttk.Frame):
             return
         self.title_var.set(f"{path.name}  \u00b7  {source}" if source else path.name)
         self.details_var.set("Loading preview\u2026")
-        self._set_open_enabled(path.exists())
+        self._set_open_enabled(False)  # enabled once the worker confirms the file exists
         self._set_page_controls(False, 0, 1)
 
         def work() -> None:
@@ -252,9 +296,11 @@ class PreviewPane(ttk.Frame):
                     error=str(exc),
                 )
             try:
-                self.after(0, lambda r=result, g=gen: self._apply(r, g))
-            except (RuntimeError, tk.TclError):
-                pass  # window closed while the preview was rendering
+                exists = result.source.exists()
+                has_image = bool(result.image_path and result.image_path.is_file())
+            except OSError:
+                exists = has_image = False
+            post_ui(lambda r=result, g=gen, e=exists, i=has_image: self._apply(r, g, e, i))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -287,9 +333,10 @@ class PreviewPane(ttk.Frame):
         if self._retry is not None:
             self._retry()
 
-    def _apply(self, result: PreviewResult, gen: int) -> None:
-        if gen != self._gen:
+    def _apply(self, result: PreviewResult, gen: int, exists: bool = False, has_image: bool = False) -> None:
+        if gen != self._gen or not self.winfo_exists():
             return
+        self._exists = exists
         self._result = result
         self._path = result.source
         title = result.title
@@ -300,10 +347,10 @@ class PreviewPane(ttk.Frame):
         if self._source_label and details and not details.startswith(self._source_label):
             details = f"{self._source_label}  \u00b7  {details}"
         self.details_var.set(details)
-        self._set_open_enabled(result.source.exists())
+        self._set_open_enabled(exists)
         show_pages = result.kind == "image" and result.page_count > 1
         self._set_page_controls(show_pages, result.page, result.page_count)
-        if result.kind == "image" and result.image_path and result.image_path.is_file():
+        if result.kind == "image" and has_image:
             self._show_image(result.image_path)
             if result.error:
                 self.details_var.set(result.details + "  \u00b7  " + result.error)
@@ -397,7 +444,7 @@ class PreviewPane(ttk.Frame):
             self.page_var.set("")
 
     def _blocked(self) -> bool:
-        message = disconnected_drive_message(self._path) if self._path else None
+        message = self._blocked_cb(self._path) if (self._path and self._blocked_cb) else None
         if message and self._status_cb is not None:
             self._status_cb(message)
         return bool(message)
@@ -405,7 +452,7 @@ class PreviewPane(ttk.Frame):
     def _open_file(self) -> None:
         if self._blocked():
             return
-        if self._path and self._path.exists():
+        if self._path and self._exists:
             open_file(self._path)
 
     def _open_folder(self) -> None:
@@ -424,21 +471,22 @@ class PreviewPane(ttk.Frame):
 
 
 def _add_tree_and_preview(
-    parent: ttk.Frame, preview_height: int = 260, status_cb=None
+    parent: ttk.Frame, preview_width: int = PREVIEW_WIDTH, status_cb=None, blocked_cb=None
 ) -> tuple[ttk.Frame, PreviewPane, ttk.Panedwindow]:
-    """Table above a resizable (drag the sash) and collapsible preview."""
-    pane = ttk.Panedwindow(parent, orient=tk.VERTICAL)
+    """Table on the left, preview on the RIGHT (fixed ~360 px, drag to resize, collapsible)."""
+    pane = ttk.Panedwindow(parent, orient=tk.HORIZONTAL)
     pane.pack(fill="both", expand=True)
     table = ttk.Frame(pane)
-    preview = PreviewPane(pane, status_cb=status_cb)
-    pane.add(table, weight=3)
-    pane.add(preview, weight=1)
+    preview = PreviewPane(pane, status_cb=status_cb, blocked_cb=blocked_cb)
+    preview.configure(width=preview_width)
+    pane.add(table, weight=1)
+    pane.add(preview, weight=0)
 
     def place_sash(_event: tk.Event | None = None) -> None:
         try:
-            height = pane.winfo_height()
-            if height > preview_height + 180:
-                pane.sashpos(0, height - preview_height)
+            width = pane.winfo_width()
+            if width > preview_width + 320:
+                pane.sashpos(0, width - preview_width)
         except tk.TclError:
             pass
         pane.unbind("<Map>")
@@ -448,6 +496,10 @@ def _add_tree_and_preview(
 
 
 def _scrolled_tree(parent: ttk.Frame, tree: ttk.Treeview) -> None:
+    """Vertical + horizontal scrollbars. Columns keep their width as a minimum,
+    so a narrow window scrolls sideways instead of squashing every column."""
+    for col in tree["columns"]:
+        tree.column(col, minwidth=int(tree.column(col, "width")))
     vsb = ttk.Scrollbar(parent, orient="vertical", command=tree.yview)
     hsb = ttk.Scrollbar(parent, orient="horizontal", command=tree.xview)
     tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
@@ -484,6 +536,16 @@ class SonarApp(tk.Tk):
         self.expire_later: list[ExpiryItem] = []
         self._expire_loaded = False
         self._closing = False
+        self._drive_states: dict[str, bool] = {}
+        self._health_busy = False
+        self._health_then: list = []
+        self._search_req = 0
+        self._search_busy = False
+        self._insert_job = None
+        self._expire_req = 0
+        self._expire_busy = False
+        self.timings: dict[str, float] = {}
+        self._ui_job = self.after(UI_POLL_MS, self._drain_ui_queue)
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(50, self.query_entry.focus_set)
@@ -552,19 +614,74 @@ class SonarApp(tk.Tk):
         self.refresh_btn.pack(side="right")
         ttk.Button(bar, text="Check drives", command=self.refresh_health).pack(side="right", padx=(0, 6))
 
-    def refresh_health(self) -> list[SourceStatus]:
-        """Re-test every source (mounted? index present?) and update the chips."""
+    # ----------------------------------------------------- background plumbing
+    def _drain_ui_queue(self) -> None:
+        """Run callbacks posted by worker threads (the only way workers reach Tk)."""
+        self._ui_job = None
+        deadline = time.perf_counter() + 0.03
+        while time.perf_counter() < deadline:
+            try:
+                fn = _UI_QUEUE.get_nowait()
+            except queue.Empty:
+                break
+            if self._closing:
+                continue
+            try:
+                fn()
+            except tk.TclError:
+                pass  # widget gone (window closing)
+        if not self._closing:
+            self._ui_job = self.after(UI_POLL_MS, self._drain_ui_queue)
+
+    @staticmethod
+    def _spawn(work) -> None:
+        threading.Thread(target=work, daemon=True).start()
+
+    # ------------------------------------------------------------ drive health
+    def refresh_health(self, then=None) -> None:
+        """Re-test every source in a worker thread, then update the chips.
+
+        The probe touches each drive (a sleeping USB disk can take seconds to
+        answer), so it never runs on the Tk main thread.
+        """
+        if then is not None:
+            self._health_then.append(then)
         if self._health_job is not None:
             try:
                 self.after_cancel(self._health_job)
             except tk.TclError:
                 pass
             self._health_job = None
-        try:
-            statuses = source_statuses()
-        except Exception as exc:
-            statuses = []
-            self.status.set(f"Could not check drives: {exc}")
+        if self._health_busy:
+            return
+        self._health_busy = True
+        self.health_var.set("Checking drives\u2026")
+        started = time.perf_counter()
+        known = list(self._drive_states)
+
+        def work() -> None:
+            error = ""
+            try:
+                statuses = source_statuses()
+            except Exception as exc:
+                statuses, error = [], str(exc)
+            try:
+                states = probe_drives([k if k == "/" else k + "\\" for k in known])
+            except Exception:
+                states = {}
+            elapsed = (time.perf_counter() - started) * 1000
+            post_ui(lambda: self._health_done(statuses, states, error, elapsed))
+
+        self._spawn(work)
+
+    def _health_done(self, statuses: list[SourceStatus], states: dict[str, bool], error: str, elapsed: float) -> None:
+        self._health_busy = False
+        self.timings["check_drives_worker_ms"] = elapsed
+        before = {k: v.state for k, v in self._health.items()}
+        before_drives = dict(self._drive_states)
+        self._drive_states.update(states)
+        if error:
+            self.status.set(f"Could not check drives: {error}")
         self._health = {s.label: s for s in statuses}
         online = sum(1 for s in statuses if s.online)
         for label, chip in self.source_chips.items():
@@ -591,23 +708,26 @@ class SonarApp(tk.Tk):
             )
         else:
             self.health_var.set("")
+        if before and (before != {k: v.state for k, v in self._health.items()} or before_drives != self._drive_states):
+            self._rerender_drive_cells()
         if not self._closing:
             self._health_job = self.after(HEALTH_POLL_MS, self._poll_health)
-        return statuses
+        callbacks, self._health_then = self._health_then, []
+        for cb in callbacks:
+            cb()
 
     def _poll_health(self) -> None:
         self._health_job = None
-        before = {k: v.state for k, v in self._health.items()}
         self.refresh_health()
-        after = {k: v.state for k, v in self._health.items()}
-        if before != after:
-            self._rerender_drive_cells()
 
     def _rerender_drive_cells(self) -> None:
-        if self.search_results:
-            self._render_search(keep_selection=True)
-        if self._expire_loaded:
-            self._render_expiring(keep_selection=True)
+        """Update only the Drive column (cheap tree.set calls, no disk access)."""
+        for item_id, hit in list(self.hits.items()):
+            if self.tree.exists(item_id):
+                self.tree.set(item_id, "drive", self._drive_cell(hit.source or "", hit.full_path))
+        for item_id, item in list(self.expire_items.items()):
+            if self.expire_tree.exists(item_id):
+                self.expire_tree.set(item_id, "drive", self._drive_cell(item.source or "", item.full_path))
 
     def _selected_source_key(self) -> str:
         label = (self.source_var.get() or "").strip()
@@ -624,19 +744,23 @@ class SonarApp(tk.Tk):
         if self._expire_loaded:
             self.refresh_expiring()
 
-    def _drive_state(self, path: Path, cache: dict[str, str]) -> str:
-        key = path.drive.upper() or "/"
-        if key not in cache:
-            cache[key] = "Unplugged" if disconnected_drive_message(path) else "Online"
-        return cache[key]
+    def cached_unplugged(self, path: Path | None) -> str | None:
+        """Unplugged message from the last background probe; never touches the disk."""
+        if path is None:
+            return None
+        key = drive_key(path)
+        return unplugged_message(key) if self._drive_states.get(key) is False else None
 
-    def _drive_cell(self, source: str, path: Path, cache: dict[str, str]) -> str:
-        state = self._drive_state(path, cache)
+    def _drive_state(self, path: Path, cache: dict[str, str] | None = None) -> str:
+        return "Unplugged" if self._drive_states.get(drive_key(path)) is False else "Online"
+
+    def _drive_cell(self, source: str, path: Path, cache: dict[str, str] | None = None) -> str:
+        state = self._drive_state(path)
         return f"{source} \u00b7 {state}" if source else state
 
     def unplugged_info(self, path: Path, source: str = "") -> tuple[str, str] | None:
         """(message, details) for a file on a drive that is not plugged in, else None."""
-        message = disconnected_drive_message(path)
+        message = self.cached_unplugged(path)
         if not message:
             return None
         status = self._health.get(source)
@@ -660,15 +784,16 @@ class SonarApp(tk.Tk):
         preview.show_path(hit.full_path, source=hit.source or "")
 
     def _check_again(self, preview: PreviewPane) -> None:
-        self.refresh_health()
-        self._rerender_drive_cells()
-        if preview is self.search_preview:
-            self.on_search_select()
-        elif preview is self.expire_preview:
-            self.on_expire_select()
+        def reselect() -> None:
+            if preview is self.search_preview:
+                self.on_search_select()
+            elif preview is self.expire_preview:
+                self.on_expire_select()
+
+        self.refresh_health(then=reselect)
 
     def _open_path(self, path: Path, kind: str = "file") -> bool:
-        message = disconnected_drive_message(path)
+        message = self.cached_unplugged(path)
         if message:
             self.status.set(message)
             return False
@@ -793,6 +918,8 @@ class SonarApp(tk.Tk):
         self.filter_to = ttk.Entry(filters, width=12)
         self.filter_to.pack(side="left", padx=(4, 8))
         ttk.Label(filters, text="YYYY-MM-DD", style="Muted.TLabel").pack(side="left")
+        self.clear_filters_btn = ttk.Button(filters, text="Clear filters", command=self.on_clear_filters)
+        self.clear_filters_btn.pack(side="left", padx=(10, 0))
         self.filter_folder.bind("<<ComboboxSelected>>", self.on_filters_changed)
         self.filter_person.bind("<<ComboboxSelected>>", self.on_filters_changed)
         self.filter_type.bind("<<ComboboxSelected>>", self.on_filters_changed)
@@ -803,7 +930,7 @@ class SonarApp(tk.Tk):
 
         mid = ttk.Frame(tab, padding=(12, 0, 12, 8))
         mid.pack(fill="both", expand=True)
-        left, self.search_preview, _pane = _add_tree_and_preview(mid, status_cb=self.status.set)
+        left, self.search_preview, _pane = _add_tree_and_preview(mid, status_cb=self.status.set, blocked_cb=self.cached_unplugged)
 
         columns = tuple(c[0] for c in SEARCH_COLUMNS)
         self.tree = ttk.Treeview(left, columns=columns, show="headings", selectmode="browse")
@@ -860,6 +987,34 @@ class SonarApp(tk.Tk):
         if self.active_tab() == 2 and not self._expire_loaded:
             self.refresh_expiring()
 
+    def active_filters(self) -> list[tuple[str, str]]:
+        pairs = [
+            ("Folder", self.filter_folder.get()),
+            ("Person", self.filter_person.get()),
+            ("Type", self.filter_type.get()),
+            ("From", self.filter_from.get().strip()),
+            ("To", self.filter_to.get().strip()),
+        ]
+        return [(k, v) for k, v in pairs if v]
+
+    def on_clear_filters(self) -> None:
+        """Reset Folder/Person/Type/From/To and re-run the search."""
+        for combo in (self.filter_folder, self.filter_person, self.filter_type):
+            combo.set("")
+        for entry in (self.filter_from, self.filter_to):
+            entry.delete(0, "end")
+        self._browsing = False
+        if self.query_var.get().strip():
+            self.on_search()
+        else:
+            self._cancel_insert()
+            self._search_req += 1
+            self._search_busy = False
+            self.search_results = []
+            self._render_search()
+            self.search_preview.clear()
+            self.status.set("Filters cleared.")
+
     def on_ebooks_preset(self) -> None:
         """One click: Type=eBooks; with an empty query, list the whole library by Name."""
         self.filter_type.set(EBOOKS_TYPE)
@@ -868,80 +1023,102 @@ class SonarApp(tk.Tk):
         self.on_search()
 
     def on_search(self, _event: object | None = None) -> str:
+        """Start a search in a worker thread; only the newest request may touch the table."""
         query = self.query_var.get().strip()
         if query != self._last_query:
             self._search_sort = (None, False)  # new query: back to Relevance
             self._last_query = query
-        warnings: list[str] = []
-        if not query:
-            if (self.filter_type.get() or "") != EBOOKS_TYPE:
-                self._browsing = False
-                self.search_results = []
-                self._render_search()
-                self.search_preview.clear()
-                self.status.set("Type a search and press Enter, or open the eBooks library.")
-                return "break"
-            self._browsing = True
-            if self._search_sort[0] is None:
-                self._search_sort = ("name", False)
-            try:
-                hits = browse(
-                    limit=2000,
-                    folder=self.filter_folder.get() or None,
-                    person=self.filter_person.get() or None,
-                    file_type=EBOOKS_TYPE,
-                    source=self._selected_source_key(),
-                    warnings=warnings,
-                )
-            except Exception as exc:
-                self.search_results = []
-                self._render_search()
-                self.search_preview.clear()
-                self.status.set(str(exc))
-                return "break"
-            self.search_results = hits
-            self._render_search()
-            warn = ("  " + "  ".join(warnings)) if warnings else ""
-            self.status.set(f"eBooks library: {len(hits)} book{'s' if len(hits) != 1 else ''}, sorted by Name.{warn}")
-            self._select_first(self.tree, self.search_preview)
-            return "break"
-
-        self._browsing = False
-        try:
-            hits, mode = search(
-                query,
-                limit=200,
-                folder=self.filter_folder.get() or None,
-                person=self.filter_person.get() or None,
-                file_type=self.filter_type.get() or None,
-                date_from=self.filter_from.get().strip() or None,
-                date_to=self.filter_to.get().strip() or None,
-                source=self._selected_source_key(),
-                warnings=warnings,
-            )
-        except Exception as exc:
+        self._cancel_insert()
+        self._search_req += 1
+        req = self._search_req
+        params = {
+            "folder": self.filter_folder.get() or None,
+            "person": self.filter_person.get() or None,
+            "file_type": self.filter_type.get() or None,
+            "date_from": self.filter_from.get().strip() or None,
+            "date_to": self.filter_to.get().strip() or None,
+            "source": self._selected_source_key(),
+        }
+        browsing = not query and params["file_type"] == EBOOKS_TYPE
+        if not query and not browsing:
+            self._browsing = False
+            self._search_busy = False
             self.search_results = []
             self._render_search()
             self.search_preview.clear()
-            self.status.set(str(exc))
+            self.status.set("Type a search and press Enter, or open the eBooks library.")
             return "break"
-        self.search_results = hits
-        self._render_search()
-        if not hits:
-            self.search_preview.clear()
-            note = ("  " + "  ".join(warnings)) if warnings else ""
-            self.status.set(f"No results for {query!r}.{note}")
-            return "break"
-        note = " (filename match; no FTS hits)" if mode == "like" else ""
-        counts: dict[str, int] = {}
-        for hit in hits:
-            counts[hit.source or "Local"] = counts.get(hit.source or "Local", 0) + 1
-        breakdown = ", ".join(f"{name}: {n}" for name, n in counts.items())
-        extra = f"  ({breakdown})" if len(counts) > 1 else ""
-        warn = ("  " + "  ".join(warnings)) if warnings else ""
-        self.status.set(f"{len(hits)} result{'s' if len(hits) != 1 else ''}{note}{extra}.{warn}")
-        self._select_first(self.tree, self.search_preview)
+        self._browsing = browsing
+        if browsing and self._search_sort[0] is None:
+            self._search_sort = ("name", False)
+        self._search_busy = True
+        self.status.set("Loading eBooks library\u2026" if browsing else f"Searching for {query!r}\u2026")
+        started = time.perf_counter()
+
+        def work() -> None:
+            warnings: list[str] = []
+            error, mode, hits = "", "like", []
+            try:
+                if browsing:
+                    hits = browse(
+                        limit=2000,
+                        folder=params["folder"],
+                        person=params["person"],
+                        file_type=EBOOKS_TYPE,
+                        source=params["source"],
+                        warnings=warnings,
+                    )
+                else:
+                    hits, mode = search(query, limit=200, warnings=warnings, **params)
+            except Exception as exc:
+                error = str(exc)
+            query_ms = (time.perf_counter() - started) * 1000
+            try:
+                states = probe_drives(h.full_path for h in hits)
+            except Exception:
+                states = {}
+            post_ui(lambda: self._search_done(req, query, browsing, hits, mode, warnings, error, states, query_ms))
+
+        self._spawn(work)
         return "break"
+
+    def _search_done(self, req, query, browsing, hits, mode, warnings, error, states, query_ms) -> None:
+        if req != self._search_req:
+            return  # a newer search started; drop this result
+        self._search_busy = False
+        self.timings["search_worker_ms"] = query_ms
+        self._drive_states.update(states)
+        self.search_results = hits if not error else []
+        if error:
+            self._render_search()
+            self.search_preview.clear()
+            self.status.set(error)
+            return
+        warn = ("  " + "  ".join(warnings)) if warnings else ""
+        if not hits:
+            self._render_search()
+            self.search_preview.clear()
+            active = self.active_filters()
+            if active:
+                desc = ", ".join(f"{k}={v}" for k, v in active)
+                label = "eBooks library" if browsing else repr(query)
+                self.status.set(f"0 results for {label} (filters active: {desc} \u2014 click Clear filters).{warn}")
+            else:
+                self.status.set(f"No results for {query!r}.{warn}")
+            return
+        if browsing:
+            self.status.set(f"eBooks library: {len(hits)} book{'s' if len(hits) != 1 else ''}, sorted by Name.{warn}")
+        else:
+            note = " (filename match; no FTS hits)" if mode == "like" else ""
+            counts: dict[str, int] = {}
+            for hit in hits:
+                counts[hit.source or "Local"] = counts.get(hit.source or "Local", 0) + 1
+            breakdown = ", ".join(f"{name}: {n}" for name, n in counts.items())
+            extra = f"  ({breakdown})" if len(counts) > 1 else ""
+            active = self.active_filters()
+            filt = ("  Filters: " + ", ".join(f"{k}={v}" for k, v in active) + ".") if active else ""
+            self.status.set(f"{len(hits)} result{'s' if len(hits) != 1 else ''}{note}{extra}.{filt}{warn}")
+        self._render_search(select_first=True)
 
     def _select_first(self, tree: ttk.Treeview, preview: PreviewPane) -> None:
         first = tree.get_children()
@@ -987,38 +1164,57 @@ class SonarApp(tk.Tk):
             arrow = "\u25bc" if sort_desc else "\u25b2"
             self.status.set(f"Sorted by {title} {arrow}. Click again to reverse, a third time for Relevance.")
 
-    def _render_search(self, keep_selection: bool = False) -> None:
+    def _cancel_insert(self) -> None:
+        if self._insert_job is not None:
+            try:
+                self.after_cancel(self._insert_job)
+            except tk.TclError:
+                pass
+            self._insert_job = None
+
+    def _row_values(self, hit: SearchHit) -> tuple:
+        return (
+            self._drive_cell(hit.source or "", hit.full_path),
+            hit.name,
+            hit.folder,
+            format_mtime(hit.mtime_ns),
+            human_size(hit.size),
+            hit.snippet,
+        )
+
+    def _render_search(self, keep_selection: bool = False, select_first: bool = False) -> None:
+        """Fill the table ROW_CHUNK rows per Tk tick so big lists never freeze the window."""
         keep = self.selected_hit() if keep_selection else None
+        self._cancel_insert()
         self.tree.delete(*self.tree.get_children())
         self.hits.clear()
-        cache: dict[str, str] = {}
         sort_col, sort_desc = self._search_sort
         for key, title, *_rest in SEARCH_COLUMNS:
             arrow = (" \u25bc" if sort_desc else " \u25b2") if key == sort_col else ""
             self.tree.heading(key, text=title + arrow)
-        reselect = None
-        for i, hit in enumerate(self.sorted_search_results()):
-            item_id = str(i)
-            self.hits[item_id] = hit
-            self.tree.insert(
-                "",
-                "end",
-                iid=item_id,
-                values=(
-                    self._drive_cell(hit.source or "", hit.full_path, cache),
-                    hit.name,
-                    hit.folder,
-                    format_mtime(hit.mtime_ns),
-                    human_size(hit.size),
-                    hit.snippet,
-                ),
-            )
-            if keep is not None and hit is keep:
-                reselect = item_id
-        if reselect is not None:
-            self.tree.selection_set(reselect)
-            self.tree.focus(reselect)
-            self.tree.see(reselect)
+        ordered = self.sorted_search_results()
+        for i, hit in enumerate(ordered):
+            self.hits[str(i)] = hit
+        target = None
+        if keep is not None:
+            target = next((str(i) for i, h in enumerate(ordered) if h is keep), None)
+        elif select_first and ordered:
+            target = "0"
+        self._insert_rows(ordered, 0, target)
+
+    def _insert_rows(self, ordered: list[SearchHit], start: int, target: str | None) -> None:
+        self._insert_job = None
+        end = min(start + ROW_CHUNK, len(ordered))
+        for i in range(start, end):
+            self.tree.insert("", "end", iid=str(i), values=self._row_values(ordered[i]))
+        if target is not None and self.tree.exists(target) and not self.tree.selection():
+            self.tree.selection_set(target)
+            self.tree.focus(target)
+            self.tree.see(target)
+        if end < len(ordered):
+            self._insert_job = self.after(1, lambda: self._insert_rows(ordered, end, target))
+        elif target is None and not ordered:
+            pass
 
     def on_double_click(self, _event: object | None = None) -> str | None:
         hit = self.selected_hit()
@@ -1073,9 +1269,9 @@ class SonarApp(tk.Tk):
                 code, output = run_reindex(source=self._selected_source_key())
             except Exception as exc:
                 message = str(exc)
-                self.after(0, lambda m=message: self._refresh_done(1, m))
+                post_ui(lambda m=message: self._refresh_done(1, m))
                 return
-            self.after(0, lambda c=code, o=output: self._refresh_done(c, o))
+            post_ui(lambda c=code, o=output: self._refresh_done(c, o))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -1141,7 +1337,7 @@ class SonarApp(tk.Tk):
 
         mid = ttk.Frame(tab, padding=(12, 0, 12, 0))
         mid.pack(fill="both", expand=True)
-        left, self.sort_preview, self.sort_pane = _add_tree_and_preview(mid, status_cb=self.status.set)
+        left, self.sort_preview, self.sort_pane = _add_tree_and_preview(mid, status_cb=self.status.set, blocked_cb=self.cached_unplugged)
 
         columns = ("include", "action", "file", "dest", "rule", "confidence")
         self.sort_tree = ttk.Treeview(left, columns=columns, show="headings", selectmode="browse")
@@ -1202,8 +1398,18 @@ class SonarApp(tk.Tk):
             self.sort_pane.forget(self.sort_preview)
             self.preview_toggle_btn.configure(text="Show preview")
         else:
-            self.sort_pane.add(self.sort_preview, weight=1)
+            self.sort_pane.add(self.sort_preview, weight=0)
+            self.after_idle(lambda: self._place_preview_sash(self.sort_pane))
             self.preview_toggle_btn.configure(text="Hide preview")
+
+    @staticmethod
+    def _place_preview_sash(pane: ttk.Panedwindow) -> None:
+        try:
+            width = pane.winfo_width()
+            if width > PREVIEW_WIDTH + 320:
+                pane.sashpos(0, width - PREVIEW_WIDTH)
+        except tk.TclError:
+            pass
 
     def _cabinet_root(self) -> Path | None:
         if self._cabinet is None:
@@ -1332,7 +1538,7 @@ class SonarApp(tk.Tk):
             except Exception as exc:
                 items, plan, error = [], None, str(exc)
             try:
-                self.after(0, lambda: self._preview_done(items, plan, error))
+                post_ui(lambda: self._preview_done(items, plan, error))
             except (RuntimeError, tk.TclError):
                 pass
 
@@ -1470,7 +1676,7 @@ class SonarApp(tk.Tk):
             except Exception as exc:
                 result, error = ApplyResult(errors=1), str(exc)
             try:
-                self.after(0, lambda: self._apply_done(result, error))
+                post_ui(lambda: self._apply_done(result, error))
             except (RuntimeError, tk.TclError):
                 pass
 
@@ -1507,7 +1713,7 @@ class SonarApp(tk.Tk):
                 error = ""
             except Exception as exc:
                 result, error = ApplyResult(errors=1), str(exc)
-            self.after(0, lambda: self._undo_done(result, error, log))
+            post_ui(lambda: self._undo_done(result, error, log))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -1554,7 +1760,7 @@ class SonarApp(tk.Tk):
 
         mid = ttk.Frame(tab, padding=(12, 0, 12, 8))
         mid.pack(fill="both", expand=True)
-        left, self.expire_preview, _pane = _add_tree_and_preview(mid, status_cb=self.status.set)
+        left, self.expire_preview, _pane = _add_tree_and_preview(mid, status_cb=self.status.set, blocked_cb=self.cached_unplugged)
 
         columns = ("drive", "person", "name", "expiry", "days", "status", "folder")
         self.expire_tree = ttk.Treeview(left, columns=columns, show="headings", selectmode="browse")
@@ -1622,27 +1828,53 @@ class SonarApp(tk.Tk):
         except ValueError:
             self.status.set("Days must be a number.")
             return "break"
-        warnings: list[str] = []
-        try:
-            all_items = expiring(days=None, source=self._selected_source_key(), warnings=warnings)
-        except Exception as exc:
-            self.status.set(str(exc))
-            return "break"
+        self._expire_req += 1
+        req = self._expire_req
+        self._expire_busy = True
         self._expire_loaded = True
+        source = self._selected_source_key()
+        self.status.set("Loading expiring documents\u2026")
+        started = time.perf_counter()
+
+        def work() -> None:
+            warnings: list[str] = []
+            error, items = "", []
+            try:
+                items = expiring(days=None, source=source, warnings=warnings)
+            except Exception as exc:
+                error = str(exc)
+            try:
+                states = probe_drives(i.full_path for i in items)
+            except Exception:
+                states = {}
+            elapsed = (time.perf_counter() - started) * 1000
+            post_ui(lambda: self._expiring_done(req, window, items, warnings, error, states, elapsed))
+
+        self._spawn(work)
+        return "break"
+
+    def _expiring_done(self, req, window, all_items, warnings, error, states, elapsed) -> None:
+        if req != self._expire_req:
+            return
+        self._expire_busy = False
+        self.timings["expiring_worker_ms"] = elapsed
+        if error:
+            self.status.set(error)
+            return
+        self._drive_states.update(states)
         self._expire_window = window
         self._expire_warnings = warnings
         self._expire_shown = [i for i in all_items if window is None or i.days_left <= window]
         self.expire_later = [i for i in all_items if window is not None and i.days_left > window]
         self._render_expiring()
         self._select_first(self.expire_tree, self.expire_preview)
-        return "break"
 
     def _render_expiring(self, keep_selection: bool = False) -> None:
         keep = self._selected_expiry() if keep_selection else None
         window = getattr(self, "_expire_window", None)
         self.expire_tree.delete(*self.expire_tree.get_children())
         self.expire_items.clear()
-        cache: dict[str, str] = {}
+        cache = None
         overdue = soon = 0
         reselect = None
         for i, item in enumerate(getattr(self, "_expire_shown", [])):
@@ -1726,13 +1958,13 @@ class SonarApp(tk.Tk):
     # ------------------------------------------------------------------- close
     def destroy(self) -> None:
         self._closing = True
-        for job in (self._health_job, self._filter_job):
+        for job in (self._health_job, self._filter_job, self._insert_job, self._ui_job):
             if job is not None:
                 try:
                     self.after_cancel(job)
                 except tk.TclError:
                     pass
-        self._health_job = self._filter_job = None
+        self._health_job = self._filter_job = self._insert_job = self._ui_job = None
         super().destroy()
 
     def _on_close(self) -> None:

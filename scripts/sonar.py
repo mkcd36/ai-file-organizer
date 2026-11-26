@@ -253,11 +253,9 @@ def _rows_to_hits(rows: list[dict], cfg: dict, source: str = "") -> list[SearchH
         if root_path is None:
             continue
         rel_path = row["rel_path"]
-        full_path = root_path / rel_path
-        try:
-            full_path = full_path.resolve()
-        except OSError:
-            pass
+        # Lexical normalisation only. Path.resolve() opens every file on Windows
+        # (about 0.5 ms each on a USB disk, seconds for a big result list).
+        full_path = Path(os.path.normpath(root_path / rel_path))
         hits.append(
             SearchHit(
                 name=row["name"],
