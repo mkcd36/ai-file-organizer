@@ -27,8 +27,8 @@ Source of truth: `README.md` section 4. The audit (`scripts\sonar_index.py audit
 | Category | Pattern |
 |---|---|
 | Person documents (Health, Kids, Travel, Legal, `75 <You>`) | `Person_Type_Date_Detail.ext` (no date: `Person_Type_Detail.ext`) |
-| IDs and passports | `Person_DocType_[Date]_Exp-YYYY-MM-DD.ext` (expiry always last) |
-| Unreadable expiry on an ID that expires | `Exp-5555`, only then. No Exp token for docs that don't expire |
+| IDs and passports | `Person_DocumentType_EXP_YYYY-MM-DD.ext` (expiry always last; underscores between parts, hyphens only inside the ISO date) |
+| Unreadable expiry on an ID that expires | `EXP_5555`, only then. No EXP token for docs that don't expire |
 | Insurance cards | `Person_Carrier_Side.ext` |
 | Portrait photos | `Person_PhotoType_NN.ext` |
 | Dated photos (80 Photos) | `Person_Photo_YYYY-MM-DD_Detail.ext` |
@@ -63,7 +63,7 @@ Use the README section 3 template. Documents that never change get one folder (`
 
 ## 5. Lessons learned (README section 5, condensed)
 
-- `Exp-5555` only for an unreadable expiry. Never invent dates. Scanner prefixes and modified times are not document dates.
+- `EXP_5555` only for an unreadable expiry. Never invent dates. Scanner prefixes and modified times are not document dates.
 - `X_Filed.pdf` and `X_Filed-Copy.pdf` can be different files. Check hashes and keep both under meaningful names.
 - Archive wrappers and overlapping extracts can share names without being byte-identical.
 - Same-day receipts with `-b` or `-c` suffixes are separate transactions. Don't thin receipts.

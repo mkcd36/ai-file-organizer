@@ -614,7 +614,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--type", dest="file_type", help="PDF, Image, Word, Excel, Text, Video, eBooks, or Other")
     parser.add_argument("--from", dest="date_from", help="start date YYYY-MM-DD (mtime or filename date)")
     parser.add_argument("--to", dest="date_to", help="end date YYYY-MM-DD")
-    parser.add_argument("--expiring", action="store_true", help="list documents with Exp-YYYY-MM-DD in the name")
+    parser.add_argument("--expiring", action="store_true", help="list documents with EXP_YYYY-MM-DD (or legacy Exp-YYYY-MM-DD) in the name")
     parser.add_argument("--days", type=int, default=180, help="for --expiring, include past-due and due within N days")
     parser.add_argument(
         "--reindex",

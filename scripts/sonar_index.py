@@ -60,7 +60,7 @@ RX_TAX = re.compile(rf"^\d{{4}}_Tax_{_PART}_{_PART}(?:_{_PART})*{_EXT}$")
 RX_INSURANCE = re.compile(rf"^{_PERSON}_{_PART}_{_PART}{_EXT}$")
 RX_PHOTO = re.compile(rf"^[A-Z][A-Za-z0-9-]+_{_PART}_\d{{2}}{_EXT}$")
 RX_PHOTO_DATED = re.compile(rf"^{_PROJECT}_Photo_{_DATE_FULL}(?:_{_PART})?{_EXT}$")
-RX_ID_EXP = re.compile(rf"^{_PERSON}(?:_{_PART})*_Exp-(?:\d{{4}}-\d{{2}}-\d{{2}}|5555){_EXT}$")
+RX_ID_EXP = re.compile(rf"^{_PERSON}(?:_{_PART})*_(?:Exp-|EXP_)(?:\d{{4}}-\d{{2}}-\d{{2}}|5555){_EXT}$")
 RX_ID_OPEN = re.compile(rf"^{_PERSON}_{_PART}(?:_{_PART})*{_EXT}$")
 RULES_READY = False
 DATED_PHOTOS = False
@@ -89,8 +89,8 @@ RX_VAGUE = re.compile(
     r")(?:[\s_\-]*\d+)?$"
 )
 RX_CAMERA = re.compile(r"(?i)^(img|dsc|pict|photo)[-_ ]?\d+$")
-RX_EXP5555 = re.compile(r"Exp-5555")
-RX_EXP_DATE = re.compile(r"Exp-(\d{4}-\d{2}-\d{2})")
+RX_EXP5555 = re.compile(r"(?i)(?:Exp-|EXP_)5555")
+RX_EXP_DATE = re.compile(r"(?i)(?:Exp-|EXP_)(\d{4}-\d{2}-\d{2})")
 
 CODE_EXTS = {
     ".py", ".js", ".ts", ".tsx", ".jsx", ".mjs", ".cjs",
@@ -363,7 +363,7 @@ PEOPLE: set[str] = set(PERSON_ALIASES)
 YOU_FOLDER = "75 You"
 RX_DOC_DATE = re.compile(r"(20\d{2})-(\d{2})-(\d{2})")
 RX_DOC_MONTH = re.compile(r"(20\d{2})-(\d{2})(?!-\d{2})(?!\d)")
-RX_EXPIRY = re.compile(r"Exp-(\d{4}-\d{2}-\d{2})")
+RX_EXPIRY = re.compile(r"(?i)(?:Exp-|EXP_)(\d{4}-\d{2}-\d{2})")
 RX_CAMEL = re.compile(r"([a-z])([A-Z])")
 RX_ACRONYM = re.compile(r"([A-Z]+)([A-Z][a-z])")
 RX_LET_NUM = re.compile(r"([A-Za-z])(\d)")
@@ -1260,9 +1260,9 @@ def load_naming_rules(mdc: Path, readme: Path) -> None:
     text = mdc.read_text(encoding="utf-8")
     required = [
         "Person_Type_Date_Detail",
-        "Person_DocType_[Date]_Exp-YYYY-MM-DD",
-        "Exp-5555",
-        "No Exp token for docs that don't expire",
+        "Person_DocumentType_EXP_YYYY-MM-DD",
+        "EXP_5555",
+        "No EXP token for docs that don't expire",
         "Person_Carrier_Side",
         "Person_PhotoType_NN",
         "Project_Type_Date_Detail",
@@ -1285,7 +1285,7 @@ def load_naming_rules(mdc: Path, readme: Path) -> None:
 
 
 def id_conforms(name: str) -> bool:
-    if "Exp-" in name:
+    if re.search(r"(?i)(?:Exp-|EXP_)", name):
         return RX_ID_EXP.match(name) is not None
     return RX_ID_OPEN.match(name) is not None
 
@@ -1293,10 +1293,13 @@ def id_conforms(name: str) -> bool:
 def assert_naming_examples() -> None:
     cases = [
         ("Kid1_Dental_2026-10-01_Checkup.pdf", "person", True),
+        ("You_DL_EXP_5555.jpg", "id", True),
         ("You_DL_Exp-5555.jpg", "id", True),
+        ("Kid2_Passport_EXP_2031-03-18.pdf", "id", True),
         ("Kid2_Passport_Issued-2026-03-19_Exp-2031-03-18.pdf", "id", True),
         ("Kid1_BirthCertificate.pdf", "id", True),
         ("Kid1_BirthCertificate_2016-04-19_Amended.pdf", "id", True),
+        ("You_DL_2_EXP_5555.pdf", "id", True),
         ("You_DL_2_Exp-5555.pdf", "id", True),
         ("Kid1_Insurer_Front.png", "insurance", True),
         ("Life Insurance C4.jpg", "insurance", False),

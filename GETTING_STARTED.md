@@ -137,8 +137,8 @@ Dates are `YYYY-MM-DD` (or `YYYY-MM` / `YYYY` when that's all the document gives
 | Category | Pattern | Example |
 |---|---|---|
 | Person documents | `Person_Type_Date_Detail.ext` | `Kid1_Dental_2026-10-01_Checkup.pdf` |
-| IDs and passports | `Person_DocType_[Date]_Exp-YYYY-MM-DD.ext` | `You_DL_Exp-2030-01-31.pdf` |
-| Docs that never expire | `Person_DocType.ext` | `Kid1_BirthCertificate.pdf` |
+| IDs and passports | `Person_DocumentType_EXP_YYYY-MM-DD.ext` | `You_DL_EXP_2030-01-31.pdf` |
+| Docs that never expire | `Person_DocumentType.ext` | `Kid1_BirthCertificate.pdf` |
 | Home (no person) | `Project_Type_Date_Detail.ext` | `Home_Deed_2020-03-15.pdf` |
 | Money | `YYYY-MM-DD_Source_DocType_Detail.ext` | `2026-02-21_<Bank>_Statement.pdf` |
 | Tax | `YYYY_Tax_Form_Source.ext` | `2025_Tax_W2_<Employer>.pdf` |

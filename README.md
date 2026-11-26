@@ -75,13 +75,13 @@ This kit describes a local-only system, with no cloud uploads, for organizing ev
 | Piece | What it does |
 |---|---|
 | Folder cabinet | `00 Inbox` … `80 Photos`, one numbered "drawer" per life area, with per-person subfolders |
-| Naming standard | `Person_Type_Date_Detail`, ID expiry dates in the name, Money files sorted by date |
+| Naming standard | `Person_Type_Date_Detail`, ID expiry dates (`EXP_YYYY-MM-DD`) in the name, Money files sorted by date |
 | Safe dedupe | SHA-256 exact matches only, moved to `To Review\For Deletion`, never deleted |
 | OCR | Scanned PDFs get a text layer (OCRmyPDF), with untouched originals kept in `To Review\OCR Originals` |
 | Local index | SQLite FTS5 index of names, paths and document text (PDF, Word, Excel, PowerPoint, text) |
 | Search app | Desktop window with Search, Sort a folder and Expiring tabs, filters and a preview pane |
 | `sonar` / `ssort` | Terminal search with clickable results, and a "sort this folder" tool with preview/apply/undo |
-| Audit | Checks every name against the standard and flags copies, vague names, `Exp-5555` and duplicates |
+| Audit | Checks every name against the standard and flags copies, vague names, `EXP_5555` and duplicates |
 | Agent protocol | Locks, session logs, STATUS board and ISSUES list. Runs unattended and logs issues for your review |
 | External backup | `scripts\sonar_backup.py` copies new cabinet files to an external drive by SHA-256, never overwrites or deletes |
 
@@ -217,7 +217,7 @@ One consistent pattern per category lets you find a file by its name alone, make
 - **Person first** in personal drawers (`<Kid1>_Dental_…`). Explorer groups each person's files together, and typing the name in search narrows results right away.
 - **Date first** in Money (`2026-02-21_<Bank>_Statement…`). Money is usually looked up by when it happened, and `YYYY-MM-DD` at the front sorts in time order automatically.
 - **Tax year first** in tax files (`2025_Tax_…`). A whole tax year sorts together, ready to hand to a preparer.
-- **Expiry last** on IDs (`…_Exp-2030-01-31`). The `Expiring` tab and `sonar --expiring` read it, and it's always in the same place.
+- **Expiry last** on IDs (`…_EXP_2030-01-31`). The `Expiring` tab and `sonar --expiring` read it, and it's always in the same place.
 - **Type before detail.** The broad category (Dental, Statement, Quote) comes before the specifics (provider, item), so similar documents sort together.
 - The indexer also splits names into words (`KitchenRemodel_Quote` becomes "kitchen remodel quote"), so every part of a name is searchable.
 
@@ -226,8 +226,8 @@ One consistent pattern per category lets you find a file by its name alone, make
 | Category | Pattern | Examples |
 |---|---|---|
 | Person documents (Health, Kids, Travel, Legal, `75 <You>`) | `Person_Type_Date_Detail.ext` (no date: `Person_Type_Detail.ext`) | `Kid1_Dental_2026-10-01_Checkup.pdf`<br>`Spouse_Lab_2025-11-03_BloodWork.pdf`<br>`Kid2_School_2026-09-01_ReportCard.pdf` |
-| IDs and passports | `Person_DocType_[Date]_Exp-YYYY-MM-DD.ext` (expiry always last) | `You_DL_Exp-2030-01-31.pdf`<br>`Kid2_Passport_Issued-2026-03-19_Exp-2031-03-18.pdf`<br>`Spouse_DL_Exp-5555.jpg` (only if the expiry is truly unreadable) |
-| Docs that never expire | `Person_DocType.ext` (no `Exp` token) | `Kid1_BirthCertificate.pdf`<br>`You_SocialSecurityCard.pdf` |
+| IDs and passports | `Person_DocumentType_EXP_YYYY-MM-DD.ext` (expiry always last; underscores between parts, hyphens only inside the ISO date) | `You_DL_EXP_2030-01-31.pdf`<br>`Kid2_Passport_EXP_2031-03-18.pdf`<br>`Spouse_DL_EXP_5555.jpg` (only if the expiry is truly unreadable) |
+| Docs that never expire | `Person_DocumentType.ext` (no `EXP` token) | `Kid1_BirthCertificate.pdf`<br>`You_SocialSecurityCard.pdf` |
 | Insurance cards | `Person_Carrier_Side.ext` | `You_<Insurer>_Front.png`<br>`Kid1_<Insurer>_Back.png` |
 | Portrait photos | `Person_PhotoType_NN.ext` | `Kid2_PassportPhoto_01.jpg`<br>`You_Headshot_02.jpg` |
 | Dated photos (80 Photos) | `Person_Photo_YYYY-MM-DD_Detail.ext` | `Kid1_Photo_2026-04-09_Birthday.jpg`<br>`Family_Photo_2025-07-04_Beach.jpg` |
@@ -254,7 +254,7 @@ These go in `plans\check-exceptions.txt` (see §7) so the audit doesn't flag the
 These are corrections from a real multi-week cleanup. Put all of them in the agent's rules.
 
 **Naming and dates**
-- Use `Exp-5555` only when an ID that has an expiry is truly unreadable. Never invent an expiry date. Docs that don't expire get no `Exp` token.
+- Use `EXP_5555` only when an ID that has an expiry is truly unreadable. Never invent an expiry date. Docs that don't expire get no `EXP` token.
 - A scanner date prefix is not a document date. The file's modified time is not a document date either.
 - If there's no readable document date, keep the original name and log a grouped needs-human issue. Don't guess.
 - Read page 1 before assigning a person. Memory is wrong more often than you'd think. A vital record "everyone knew" was one kid's turned out to belong to the other.
@@ -495,7 +495,7 @@ This organizes files *already on* the external drive. To copy new cabinet files 
 - **Sonar app (desktop shortcut):**
   - **Search tab:** a search box, a Source dropdown (All drives, plus any indexes in `extra_indexes`), and Folder, Person, Type and date-range filters. Results show which drive they came from. If a file lives on an unplugged drive, the preview tells you to plug it in instead of erroring. A preview pane on the right shows a PDF page (Prev/Next), an image, the first lines of a text or CSV file, or the text of a Word or Excel file.
   - **Sort a folder tab:** pick a folder, preview where each file would go, tick and apply, and undo the last sort if needed.
-  - **Expiring tab:** every ID with an `Exp-` date, soonest first.
+  - **Expiring tab:** every ID with an `EXP_` date (the older `Exp-YYYY-MM-DD` form is still read), soonest first.
 - **`ssort` (terminal):** the same sort engine as the app tab. Preview → apply → undo.
 
 
@@ -524,7 +524,7 @@ This organizes files *already on* the external drive. To copy new cabinet files 
 3. When you're satisfied, delete the subfolder yourself (or move it to the Recycle Bin).
 4. Do the same with `To Review\OCR Originals` once you've confirmed that the OCR'd PDFs look right.
 
-**Expiry watch:** IDs carry `Exp-YYYY-MM-DD`, so `sonar --expiring` (or a monthly reminder from any scheduler or assistant) catches passports and licenses before they lapse.
+**Expiry watch:** IDs carry `EXP_YYYY-MM-DD`, so `sonar --expiring` (or a monthly reminder from any scheduler or assistant) catches passports and licenses before they lapse.
 
 ---
 
