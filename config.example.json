@@ -7,13 +7,34 @@
   "timezone": "America/New_York",
   "you": "You",
   "people": {
-    "You": ["you", "<your-nickname>"],
-    "Spouse": ["spouse", "<spouse-nickname>"],
-    "Kid1": ["kid1"],
-    "Kid2": ["kid2"],
-    "Parents": ["parents"]
+    "You": [
+      "you",
+      "<your-nickname>"
+    ],
+    "Spouse": [
+      "spouse",
+      "<spouse-nickname>"
+    ],
+    "Kid1": [
+      "kid1"
+    ],
+    "Kid2": [
+      "kid2"
+    ],
+    "Parents": [
+      "parents"
+    ]
   },
-  "children": ["Kid1", "Kid2"],
+  "children": [
+    "Kid1",
+    "Kid2"
+  ],
+  "employers": {
+    "<Employer>": [
+      "<employer>",
+      "<employer-alias>"
+    ]
+  },
   "folders": [
     "00 Inbox",
     "10 Identity",
@@ -30,7 +51,39 @@
   ],
   "extra_roots": [],
   "_extra_roots_example": [
-    { "name": "external-drive", "path": "E:\\Family" }
+    {
+      "name": "external-drive",
+      "path": "E:\\Family"
+    },
+    {
+      "name": "projects",
+      "path": "%USERPROFILE%\\Documents\\Projects",
+      "exclude": [
+        ".git",
+        "node_modules",
+        "dist",
+        "build",
+        "__pycache__",
+        ".venv",
+        ".next",
+        "target",
+        "coverage"
+      ]
+    }
   ],
+  "extra_indexes": [],
+  "_extra_indexes_example": [
+    {
+      "name": "external",
+      "label": "External Drive",
+      "db": "D:/_index/external.db",
+      "config": "plans/external-index.json"
+    }
+  ],
+  "_backup_example": {
+    "dest_root": "E:\\Family",
+    "index_db": "E:\\_index\\index.db",
+    "conflicts_root": "E:\\To Review\\Sync Conflicts"
+  },
   "ghostscript": ""
 }

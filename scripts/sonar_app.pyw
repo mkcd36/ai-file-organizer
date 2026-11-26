@@ -20,7 +20,16 @@ if str(_SCRIPTS) not in sys.path:
 
 from sonar_index import load_settings  # noqa: E402
 from sonar_preview import PreviewResult, cleanup_temp, preview as build_preview  # noqa: E402
-from sonar import ExpiryItem, SearchHit, expiring, run_reindex, search  # noqa: E402
+from sonar import (  # noqa: E402
+    ALL_SOURCE_LABEL,
+    ExpiryItem,
+    SearchHit,
+    configured_sources,
+    disconnected_drive_message,
+    expiring,
+    run_reindex,
+    search,
+)
 from sonar_sort import (  # noqa: E402
     ApplyResult,
     SortItem,
@@ -35,7 +44,7 @@ DOWNLOADS = Path.home() / "Downloads"
 _SETTINGS = load_settings()
 TOP_FOLDERS = [""] + list(_SETTINGS.get("folders") or [])
 PERSONS = [""] + list((_SETTINGS.get("people") or {}).keys())
-FILE_TYPES = ["", "PDF", "Image", "Word", "Excel", "Text", "Video", "Other"]
+FILE_TYPES = ["", "PDF", "Image", "Word", "Excel", "Text", "Video", "eBooks", "Other"]
 
 
 def open_file(path: Path) -> None:
@@ -57,6 +66,7 @@ class PreviewPane(ttk.Frame):
         self._photo = None
         self._source_image = None
         self._resize_job: str | None = None
+        self._source_label = ""
         self._build()
 
     def _build(self) -> None:
@@ -64,11 +74,11 @@ class PreviewPane(ttk.Frame):
         self.rowconfigure(3, weight=1)
 
         self.title_var = tk.StringVar(value="Preview")
-        ttk.Label(self, textvariable=self.title_var, font=("", 10, "bold"), wraplength=360).grid(
+        ttk.Label(self, textvariable=self.title_var, font=("", 10, "bold"), wraplength=960).grid(
             row=0, column=0, sticky="ew", padx=10, pady=(8, 2)
         )
         self.details_var = tk.StringVar(value="Select a file to preview.")
-        ttk.Label(self, textvariable=self.details_var, wraplength=360, justify="left").grid(
+        ttk.Label(self, textvariable=self.details_var, wraplength=960, justify="left").grid(
             row=1, column=0, sticky="ew", padx=10, pady=(0, 6)
         )
 
@@ -103,23 +113,25 @@ class PreviewPane(ttk.Frame):
         self.text.configure(yscrollcommand=self.text_scroll.set)
 
         self.message_var = tk.StringVar(value="")
-        self.message = ttk.Label(body, textvariable=self.message_var, wraplength=360, justify="left")
+        self.message = ttk.Label(body, textvariable=self.message_var, wraplength=960, justify="left")
 
         self._show_message("Select a file to preview.")
 
-    def show_path(self, path: Path | None, page: int = 0) -> None:
+    def show_path(self, path: Path | None, page: int = 0, source: str = "") -> None:
         self._gen += 1
         gen = self._gen
         self._path = path
+        self._source_label = source or ""
         if path is None:
             self._result = None
+            self._source_label = ""
             self.title_var.set("Preview")
             self.details_var.set("Select a file to preview.")
             self._set_open_enabled(False)
             self._set_page_controls(False, 0, 1)
             self._show_message("Select a file to preview.")
             return
-        self.title_var.set(path.name)
+        self.title_var.set(f"{path.name}  ·  {source}" if source else path.name)
         self.details_var.set("Loading preview…")
         self._set_open_enabled(path.exists())
         self._set_page_controls(False, 0, 1)
@@ -142,13 +154,30 @@ class PreviewPane(ttk.Frame):
     def clear(self) -> None:
         self.show_path(None)
 
+    def show_unavailable(self, path: Path, title: str, message: str, details: str = "") -> None:
+        """Show a drive-offline or missing-file message instead of an error."""
+        self._gen += 1
+        self._path = path
+        self._result = None
+        self.title_var.set(title or (path.name if path else "Preview"))
+        self.details_var.set(details or (str(path) if path else ""))
+        self._set_open_enabled(False)
+        self._set_page_controls(False, 0, 1)
+        self._show_message(message)
+
     def _apply(self, result: PreviewResult, gen: int) -> None:
         if gen != self._gen:
             return
         self._result = result
         self._path = result.source
-        self.title_var.set(result.title)
-        self.details_var.set(result.details)
+        title = result.title
+        if self._source_label and self._source_label not in title:
+            title = f"{title}  ·  {self._source_label}"
+        self.title_var.set(title)
+        details = result.details
+        if self._source_label and details and not details.startswith(self._source_label):
+            details = f"{self._source_label}  ·  {details}"
+        self.details_var.set(details)
         self._set_open_enabled(result.source.exists())
         show_pages = result.kind == "image" and result.page_count > 1
         self._set_page_controls(show_pages, result.page, result.page_count)
@@ -263,33 +292,33 @@ class PreviewPane(ttk.Frame):
             self.show_path(self._path, self._result.page + 1)
 
 
-def _add_tree_and_preview(parent: ttk.Frame, preview_width: int = 420) -> tuple[ttk.Frame, PreviewPane]:
-    pane = ttk.Panedwindow(parent, orient=tk.HORIZONTAL)
+def _add_tree_and_preview(parent: ttk.Frame, preview_height: int = 260) -> tuple[ttk.Frame, PreviewPane]:
+    pane = ttk.Panedwindow(parent, orient=tk.VERTICAL)
     pane.pack(fill="both", expand=True)
-    left = ttk.Frame(pane)
+    table = ttk.Frame(pane)
     preview = PreviewPane(pane)
-    pane.add(left, weight=3)
-    pane.add(preview, weight=2)
+    pane.add(table, weight=3)
+    pane.add(preview, weight=1)
 
     def place_sash(_event: tk.Event | None = None) -> None:
         try:
-            width = pane.winfo_width()
-            if width > preview_width + 280:
-                pane.sashpos(0, width - preview_width)
+            height = pane.winfo_height()
+            if height > preview_height + 180:
+                pane.sashpos(0, height - preview_height)
         except tk.TclError:
             pass
         pane.unbind("<Map>")
 
     pane.bind("<Map>", place_sash)
-    return left, preview
+    return table, preview
 
 
 class SonarApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Sonar")
-        self.geometry("1280x680")
-        self.minsize(900, 480)
+        self.geometry("1280x800")
+        self.minsize(900, 600)
         self.hits: dict[str, SearchHit] = {}
         self._index_busy = False
         self.sort_items: dict[str, SortItem] = {}
@@ -333,6 +362,16 @@ class SonarApp(tk.Tk):
         self.query_entry.bind("<KP_Enter>", self.on_search)
 
         ttk.Button(top, text="Search", command=self.on_search).pack(side="left")
+        ttk.Label(top, text="Source").pack(side="left", padx=(12, 0))
+        self.source_var = tk.StringVar()
+        self._sources = configured_sources()
+        source_labels = [ALL_SOURCE_LABEL] + [s.label for s in self._sources]
+        self.source_combo = ttk.Combobox(
+            top, textvariable=self.source_var, values=source_labels, width=14, state="readonly"
+        )
+        self.source_var.set(source_labels[0] if source_labels else ALL_SOURCE_LABEL)
+        self.source_combo.pack(side="left", padx=(4, 0))
+        self.source_combo.bind("<<ComboboxSelected>>", self.on_filters_changed)
         self.refresh_btn = ttk.Button(top, text="Refresh index", command=self.on_refresh)
         self.refresh_btn.pack(side="left", padx=(8, 0))
 
@@ -345,7 +384,7 @@ class SonarApp(tk.Tk):
         self.filter_person = ttk.Combobox(filters, values=PERSONS, width=12, state="readonly")
         self.filter_person.pack(side="left", padx=(4, 10))
         ttk.Label(filters, text="Type").pack(side="left")
-        self.filter_type = ttk.Combobox(filters, values=FILE_TYPES, width=10, state="readonly")
+        self.filter_type = ttk.Combobox(filters, values=FILE_TYPES, width=12, state="readonly")
         self.filter_type.pack(side="left", padx=(4, 10))
         ttk.Label(filters, text="From").pack(side="left")
         self.filter_from = ttk.Entry(filters, width=12)
@@ -366,14 +405,16 @@ class SonarApp(tk.Tk):
         mid.pack(fill="both", expand=True)
         left, self.search_preview = _add_tree_and_preview(mid)
 
-        columns = ("name", "folder", "snippet")
+        columns = ("drive", "name", "folder", "snippet")
         self.tree = ttk.Treeview(left, columns=columns, show="headings", selectmode="browse")
+        self.tree.heading("drive", text="Drive")
         self.tree.heading("name", text="Name")
         self.tree.heading("folder", text="Folder")
         self.tree.heading("snippet", text="Snippet")
-        self.tree.column("name", width=220, stretch=True)
-        self.tree.column("folder", width=200, stretch=True)
-        self.tree.column("snippet", width=220, stretch=True)
+        self.tree.column("drive", width=90, stretch=False, anchor="w")
+        self.tree.column("name", width=200, stretch=True)
+        self.tree.column("folder", width=180, stretch=True)
+        self.tree.column("snippet", width=200, stretch=True)
 
         vsb = ttk.Scrollbar(left, orient="vertical", command=self.tree.yview)
         hsb = ttk.Scrollbar(left, orient="horizontal", command=self.tree.xview)
@@ -408,7 +449,7 @@ class SonarApp(tk.Tk):
         ttk.Checkbutton(top, text="Include subfolders", variable=self.sort_recursive).pack(
             side="left", padx=(8, 0)
         )
-        ttk.Button(top, text="Preview", command=self.on_preview_sort).pack(side="left", padx=(8, 0))
+        ttk.Button(top, text="Scan & Preview", command=self.on_preview_sort).pack(side="left", padx=(8, 0))
 
         mid = ttk.Frame(tab, padding=(12, 0, 12, 0))
         mid.pack(fill="both", expand=True)
@@ -447,6 +488,42 @@ class SonarApp(tk.Tk):
         ttk.Button(buttons, text="Undo last", command=self.on_undo_last).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="Open plan CSV", command=self.on_open_plan).pack(side="left", padx=(8, 0))
 
+    def _selected_source_key(self) -> str:
+        label = (self.source_var.get() or "").strip()
+        if not label or label == ALL_SOURCE_LABEL:
+            return "all"
+        for src in self._sources:
+            if src.label == label or src.name == label:
+                return src.name
+        return "all"
+
+    def _preview_hit(self, hit: SearchHit | ExpiryItem | None, preview: PreviewPane) -> None:
+        if hit is None:
+            preview.clear()
+            return
+        title = hit.name if not hit.source else f"{hit.name}  ·  {hit.source}"
+        message = disconnected_drive_message(hit.full_path)
+        if message:
+            preview.show_unavailable(hit.full_path, title, message, details=str(hit.full_path))
+            self.status.set(message)
+            return
+        preview.show_path(hit.full_path, source=hit.source or "")
+
+    def _open_path(self, path: Path, kind: str = "file") -> bool:
+        message = disconnected_drive_message(path)
+        if message:
+            self.status.set(message)
+            return False
+        try:
+            if kind == "folder":
+                open_folder(path)
+            else:
+                open_file(path)
+        except OSError as exc:
+            self.status.set(f"Could not open {kind}: {exc}")
+            return False
+        return True
+
     def selected_hit(self) -> SearchHit | None:
         selection = self.tree.selection()
         if not selection:
@@ -454,8 +531,7 @@ class SonarApp(tk.Tk):
         return self.hits.get(selection[0])
 
     def on_search_select(self, _event: object | None = None) -> None:
-        hit = self.selected_hit()
-        self.search_preview.show_path(hit.full_path if hit else None)
+        self._preview_hit(self.selected_hit(), self.search_preview)
 
     def _current_filters(self) -> dict:
         return {
@@ -492,6 +568,7 @@ class SonarApp(tk.Tk):
             self.search_preview.clear()
             self.status.set("Type a search and press Enter.")
             return
+        warnings: list[str] = []
         try:
             hits, mode = search(
                 query,
@@ -501,6 +578,8 @@ class SonarApp(tk.Tk):
                 file_type=self.filter_type.get() or None,
                 date_from=self.filter_from.get().strip() or None,
                 date_to=self.filter_to.get().strip() or None,
+                source=self._selected_source_key(),
+                warnings=warnings,
             )
         except Exception as exc:
             self.search_preview.clear()
@@ -513,14 +592,21 @@ class SonarApp(tk.Tk):
                 "",
                 "end",
                 iid=item_id,
-                values=(hit.name, hit.folder, hit.snippet),
+                values=(hit.source or "", hit.name, hit.folder, hit.snippet),
             )
         if not hits:
             self.search_preview.clear()
-            self.status.set(f"No results for {query!r}.")
+            note = ("  " + "  ".join(warnings)) if warnings else ""
+            self.status.set(f"No results for {query!r}.{note}")
             return
         note = " (filename match; no FTS hits)" if mode == "like" else ""
-        self.status.set(f"{len(hits)} result{'s' if len(hits) != 1 else ''}{note}.")
+        counts: dict[str, int] = {}
+        for hit in hits:
+            counts[hit.source or "Local"] = counts.get(hit.source or "Local", 0) + 1
+        breakdown = ", ".join(f"{name}: {n}" for name, n in counts.items())
+        extra = f"  ({breakdown})" if len(counts) > 1 else ""
+        warn = ("  " + "  ".join(warnings)) if warnings else ""
+        self.status.set(f"{len(hits)} result{'s' if len(hits) != 1 else ''}{note}{extra}.{warn}")
         first = self.tree.get_children()
         if first:
             self.tree.selection_set(first[0])
@@ -530,10 +616,7 @@ class SonarApp(tk.Tk):
         hit = self.selected_hit()
         if hit is None:
             return
-        try:
-            open_file(hit.full_path)
-        except OSError as exc:
-            self.status.set(f"Could not open file: {exc}")
+        self._open_path(hit.full_path, "file")
 
     def _row_at(self, event: tk.Event) -> str | None:
         row = self.tree.identify_row(event.y)
@@ -559,10 +642,7 @@ class SonarApp(tk.Tk):
         hit = self.selected_hit()
         if hit is None:
             return
-        try:
-            open_folder(hit.full_path)
-        except OSError as exc:
-            self.status.set(f"Could not open folder: {exc}")
+        self._open_path(hit.full_path, "folder")
 
     def menu_copy_path(self) -> None:
         hit = self.selected_hit()
@@ -581,7 +661,7 @@ class SonarApp(tk.Tk):
 
         def work() -> None:
             try:
-                code, output = run_reindex()
+                code, output = run_reindex(source=self._selected_source_key())
             except Exception as exc:
                 message = str(exc)
                 self.after(0, lambda m=message: self._refresh_done(1, m))
@@ -594,8 +674,20 @@ class SonarApp(tk.Tk):
         self._index_busy = False
         self.refresh_btn.state(["!disabled"])
         if code == 0:
-            last = output.strip().splitlines()[-1] if output.strip() else "Index updated."
-            self.status.set(last if last.lower().startswith("db:") or "seen=" in last else "Index updated.")
+            lines = [ln.strip() for ln in output.splitlines() if ln.strip()]
+            last = lines[-1] if lines else "Index updated."
+            if any("skipped" in ln.lower() for ln in lines) and any(
+                ln.lower().startswith("db:") or "seen=" in ln for ln in lines
+            ):
+                self.status.set("Index updated, with skipped sources. " + last)
+            elif any("skipped" in ln.lower() and "not connected" in ln.lower() for ln in lines) and not any(
+                "seen=" in ln or ln.lower().startswith("db:") for ln in lines
+            ):
+                self.status.set(output.strip().replace("\n", "  ") if output.strip() else last)
+            elif last.lower().startswith("db:") or "seen=" in last or "skipped" in last.lower():
+                self.status.set(last)
+            else:
+                self.status.set("Index updated.")
         else:
             detail = output.strip().splitlines()[-1] if output.strip() else f"exit {code}"
             self.status.set(f"Index refresh failed: {detail}")
@@ -811,18 +903,20 @@ class SonarApp(tk.Tk):
         mid.pack(fill="both", expand=True)
         left, self.expire_preview = _add_tree_and_preview(mid)
 
-        columns = ("person", "name", "expiry", "days", "folder")
+        columns = ("drive", "person", "name", "expiry", "days", "folder")
         self.expire_tree = ttk.Treeview(left, columns=columns, show="headings", selectmode="browse")
+        self.expire_tree.heading("drive", text="Drive")
         self.expire_tree.heading("person", text="Person")
         self.expire_tree.heading("name", text="Document")
         self.expire_tree.heading("expiry", text="Expiry")
         self.expire_tree.heading("days", text="Days left")
         self.expire_tree.heading("folder", text="Folder")
+        self.expire_tree.column("drive", width=90, stretch=False, anchor="w")
         self.expire_tree.column("person", width=100, stretch=False)
-        self.expire_tree.column("name", width=280, stretch=True)
+        self.expire_tree.column("name", width=240, stretch=True)
         self.expire_tree.column("expiry", width=110, stretch=False)
         self.expire_tree.column("days", width=90, stretch=False, anchor="e")
-        self.expire_tree.column("folder", width=200, stretch=True)
+        self.expire_tree.column("folder", width=180, stretch=True)
         self.expire_tree.tag_configure("overdue", background="#f8d0ce")
         self.expire_tree.tag_configure("soon", background="#fde8c8")
         vsb = ttk.Scrollbar(left, orient="vertical", command=self.expire_tree.yview)
@@ -849,8 +943,9 @@ class SonarApp(tk.Tk):
         except ValueError:
             self.status.set("Days must be a number.")
             return
+        warnings: list[str] = []
         try:
-            items = expiring(days=days)
+            items = expiring(days=days, source=self._selected_source_key(), warnings=warnings)
         except Exception as exc:
             self.status.set(str(exc))
             return
@@ -872,11 +967,12 @@ class SonarApp(tk.Tk):
                 "",
                 "end",
                 iid=item_id,
-                values=(item.person, item.name, item.expiry.isoformat(), days_label, item.folder),
+                values=(item.source or "", item.person, item.name, item.expiry.isoformat(), days_label, item.folder),
                 tags=(tag,) if tag else (),
             )
+        warn = ("  " + "  ".join(warnings)) if warnings else ""
         self.status.set(
-            f"Expiring: {len(items)}  past due={overdue}  within 180 days={soon}"
+            f"Expiring: {len(items)}  past due={overdue}  within 180 days={soon}{warn}"
         )
         first = self.expire_tree.get_children()
         if first:
@@ -892,26 +988,19 @@ class SonarApp(tk.Tk):
         return self.expire_items.get(selection[0])
 
     def on_expire_select(self, _event: object | None = None) -> None:
-        item = self._selected_expiry()
-        self.expire_preview.show_path(item.full_path if item else None)
+        self._preview_hit(self._selected_expiry(), self.expire_preview)
 
     def on_expire_open(self, _event: object | None = None) -> None:
         item = self._selected_expiry()
         if item is None:
             return
-        try:
-            open_file(item.full_path)
-        except OSError as exc:
-            self.status.set(f"Could not open file: {exc}")
+        self._open_path(item.full_path, "file")
 
     def on_expire_open_folder(self) -> None:
         item = self._selected_expiry()
         if item is None:
             return
-        try:
-            open_folder(item.full_path)
-        except OSError as exc:
-            self.status.set(f"Could not open folder: {exc}")
+        self._open_path(item.full_path, "folder")
 
     def _on_close(self) -> None:
         cleanup_temp()

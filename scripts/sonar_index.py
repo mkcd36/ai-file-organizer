@@ -15,7 +15,7 @@ Settings (cabinet root, people, db path, ...) come from config.json at the
 project root, falling back to config.example.json. See load_settings().
 
 Paths are stored relative to each root, with forward slashes.
-A root's optional "include" list limits a plain `index` to those folders.
+A root's optional "include" list limits a plain `index` to those folders. An optional "exclude" list names directories to skip at any depth (in addition to built-in skips such as `_index` and `.git`).
 Pass --folder to index or audit one folder explicitly.
 Audit naming uses the live folder. Exact duplicates use index hashes when
 the indexed size and mtime still match the file.
@@ -269,11 +269,22 @@ def load_config(path: Path | None) -> dict:
         item = dict(extra)
         item["path"] = str(expand_path(item["path"]))
         roots.append(item)
+    extras = []
+    for raw in settings.get("extra_indexes") or []:
+        item = dict(raw)
+        if item.get("db"):
+            item["db"] = str(expand_path(item["db"]))
+        if item.get("path"):
+            item["path"] = str(expand_path(item["path"]))
+        if item.get("config"):
+            item["config"] = str(expand_path(item["config"]))
+        extras.append(item)
     cfg = {
         "index_db": settings["index_db"],
         "exceptions": settings.get("exceptions") or "",
         "roots": roots,
         "settings": settings,
+        "extra_indexes": extras,
         "_config_path": settings["_config_path"],
     }
     return cfg
@@ -694,20 +705,35 @@ def _filter_sql(folder: str | None, person: str | None, file_type: str | None) -
         clauses.append("(" + " OR ".join(person_clauses) + ")")
     if file_type:
         label = file_type.strip()
-        match = None
-        for name, exts in TYPE_GROUPS.items():
-            if label.lower() == name.lower():
-                match = exts
-                break
-        if match is None and label.lower() == "other":
-            known = set().union(*TYPE_GROUPS.values())
-            placeholders = ",".join("?" * len(known))
-            clauses.append(f"lower(f.ext) NOT IN ({placeholders})")
-            params.extend(sorted(known))
-        elif match:
-            placeholders = ",".join("?" * len(match))
-            clauses.append(f"lower(f.ext) IN ({placeholders})")
-            params.extend(sorted(match))
+        if label.lower() in {"ebooks", "ebook", "e-books", "e-book"}:
+            # Any EPUB/Kindle book, plus PDFs only when they live under a Books
+            # or Kindle Books folder, so statements and receipts stay out.
+            clauses.append(
+                "("
+                "lower(f.ext) IN (?, ?, ?, ?) OR ("
+                "lower(f.ext) = '.pdf' AND ("
+                "replace(lower(f.rel_path), '\\', '/') LIKE '%/books/%' "
+                "OR replace(lower(f.rel_path), '\\', '/') LIKE 'books/%' "
+                "OR replace(lower(f.rel_path), '\\', '/') LIKE '%/kindle books/%' "
+                "OR replace(lower(f.rel_path), '\\', '/') LIKE 'kindle books/%'"
+                ")))"
+            )
+            params.extend([".epub", ".mobi", ".azw3", ".azw"])
+        else:
+            match = None
+            for name, exts in TYPE_GROUPS.items():
+                if label.lower() == name.lower():
+                    match = exts
+                    break
+            if match is None and label.lower() == "other":
+                known = set().union(*TYPE_GROUPS.values())
+                placeholders = ",".join("?" * len(known))
+                clauses.append(f"lower(f.ext) NOT IN ({placeholders})")
+                params.extend(sorted(known))
+            elif match:
+                placeholders = ",".join("?" * len(match))
+                clauses.append(f"lower(f.ext) IN ({placeholders})")
+                params.extend(sorted(match))
     sql = (" AND " + " AND ".join(clauses)) if clauses else ""
     return sql, params
 
@@ -840,7 +866,7 @@ def prefixes_for(root_cfg: dict, folders: list[str] | None) -> list[str] | None:
     return None
 
 
-def walk_prefix(root: Path, prefix: str | None, errors: list[str]):
+def walk_prefix(root: Path, prefix: str | None, errors: list[str], root_cfg: dict | None = None):
     base = root if prefix is None else root / prefix
     if not base.exists():
         errors.append(f"missing folder: {base}")
@@ -858,10 +884,18 @@ def walk_prefix(root: Path, prefix: str | None, errors: list[str]):
             except ValueError:
                 pass
 
+    skip = {name.lower() for name in SKIP_DIRS}
+    if root_cfg:
+        skip.update(
+            str(item).replace("\\", "/").strip("/").lower()
+            for item in (root_cfg.get("exclude") or [])
+            if str(item).strip()
+        )
+
     for dirpath, dirnames, filenames in os.walk(base, followlinks=False, onerror=onerror):
         kept: list[str] = []
         for dirname in dirnames:
-            if dirname in SKIP_DIRS:
+            if dirname.lower() in skip:
                 continue
             child = Path(dirpath) / dirname
             try:
@@ -939,7 +973,7 @@ def index_root(
         protected: list[str] = []
         staged: list[tuple] = []
         size_counts: dict[int, int] = defaultdict(int)
-        for rel, full, st, protected in walk_prefix(root, prefix, errors):
+        for rel, full, st, protected in walk_prefix(root, prefix, errors, root_cfg):
             seen.add(rel)
             if size_prefilter:
                 staged.append((rel, full, st))
@@ -1410,7 +1444,7 @@ def live_rows(conn: sqlite3.Connection, root_cfg: dict, folder: str | None) -> t
         prefixes = [p for p in (prefixes_for(root_cfg, None) or [None]) if p is None or (root / p).is_dir()]
     rows: list[dict] = []
     for prefix in prefixes:
-        for rel, full, st, _protected in walk_prefix(root, prefix, errors):
+        for rel, full, st, _protected in walk_prefix(root, prefix, errors, root_cfg):
             db = conn.execute(
                 "SELECT sha256, size, mtime_ns FROM files WHERE root=? AND rel_path=?",
                 (name, rel),
@@ -1663,7 +1697,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("--limit", type=int, default=20)
     p_search.add_argument("--folder", help="top-level Family folder, e.g. '40 Money'")
     p_search.add_argument("--person", help="person token from config, e.g. Kid1")
-    p_search.add_argument("--type", dest="file_type", help="PDF, Image, Word, Excel, Text, Video, or Other")
+    p_search.add_argument("--type", dest="file_type", help="PDF, Image, Word, Excel, Text, Video, eBooks, or Other")
     p_search.add_argument("--from", dest="date_from", help="start date YYYY-MM-DD")
     p_search.add_argument("--to", dest="date_to", help="end date YYYY-MM-DD")
 

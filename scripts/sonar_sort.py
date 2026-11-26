@@ -80,6 +80,7 @@ def load_rules(path: Path | None = None, config: Path | None = None) -> dict:
     data.setdefault("children", settings.get("children") or [])
     data.setdefault("you", settings.get("you") or "You")
     data.setdefault("you_folder", settings.get("you_folder") or "75 You")
+    data.setdefault("employers", settings.get("employers") or {})
     return data
 
 
@@ -140,6 +141,21 @@ def detect_people(text: str, rules: dict) -> list[str]:
     for canonical, aliases in people.items():
         for alias in aliases:
             if re.search(rf"(?<![a-z0-9]){re.escape(alias.lower())}(?![a-z0-9])", lowered):
+                found.append(canonical)
+                break
+    return found
+
+
+def detect_employers(text: str, rules: dict) -> list[str]:
+    found: list[str] = []
+    lowered = text.lower()
+    employers = rules.get("employers") or {}
+    for canonical, aliases in employers.items():
+        names = aliases if isinstance(aliases, (list, tuple)) else [aliases]
+        for alias in list(names) + [canonical]:
+            if not str(alias).strip():
+                continue
+            if re.search(rf"(?<![a-z0-9]){re.escape(str(alias).lower())}(?![a-z0-9])", lowered):
                 found.append(canonical)
                 break
     return found
@@ -222,6 +238,7 @@ def resolve_dest_template(
     year: str | None,
     people: list[str],
     photo_year: str | None,
+    employer: str | None = None,
 ) -> tuple[Path | None, str]:
     children = set(rules.get("children") or [])
     child = next((p for p in people if p in children), None)
@@ -233,9 +250,13 @@ def resolve_dest_template(
         if year:
             dest = dest.replace("{year}", year)
         else:
-            dest = dest.replace("{year}_Tax", "").replace("{year}", "")
+            dest = dest.replace("{year}_Tax", "").replace("{year}_Trips", "").replace("{year}", "")
             dest = re.sub(r"\\{2,}", r"\\", dest).strip("\\")
             note = "no year in name or text"
+    if "{employer}" in dest:
+        if not employer:
+            return None, "no employer detected"
+        dest = dest.replace("{employer}", employer)
     if "{photo_year}" in dest:
         if not photo_year:
             return None, "no photo date"
@@ -275,6 +296,8 @@ def classify_file(path: Path, rules: dict, dest_root: Path | None) -> SortItem:
     people = detect_people(name + " " + name_hay + " " + pdf_text, rules)
     year = detect_year(name) or detect_year(pdf_text)
     photo_year = detect_photo_year(name)
+    employers = detect_employers(name + " " + name_hay + " " + pdf_text, rules)
+    employer = employers[0] if employers else None
 
     threshold = float(rules.get("low_confidence") or 0.6)
     text_scale = float(rules.get("text_only_scale") or 0.8)
@@ -290,6 +313,8 @@ def classify_file(path: Path, rules: dict, dest_root: Path | None) -> SortItem:
             continue
         if requires == "person" and not people:
             continue
+        if requires == "employer" and not employer:
+            continue
         dest, note = resolve_dest_template(
             rule.get("dest") or "",
             rules,
@@ -297,6 +322,7 @@ def classify_file(path: Path, rules: dict, dest_root: Path | None) -> SortItem:
             year,
             people,
             photo_year,
+            employer,
         )
         if dest is None:
             continue

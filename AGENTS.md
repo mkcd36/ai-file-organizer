@@ -50,7 +50,7 @@ Formatting:
 
 ## 3. Folder structure
 
-Use the README section 3 template. Documents that never change get one folder (`10 Identity\Passports`). Documents that repeat get a folder per year (`40 Money\Taxes\2025_Tax`). Propose subfolders from what the human actually owns and create them only after approval. Put the person in the filename, not in a folder, except in Health and Kids. A subfolder name always needs a topic word, never a bare year. When the tree changes, update the cabinet's `README.md` (back it up to `plans\` first).
+Use the README section 3 template. Documents that never change get one folder (`10 Identity\Passports`). Documents that repeat get a folder per year (`40 Money\Taxes\2025_Tax`, `15 Travel\2025`, `60 Work\Employers\<Employer>\Payslips\2025`). Propose subfolders from what the human actually owns and create them only after approval. Put the person in the filename, not in a folder, except in Health and Kids. A subfolder name always needs a topic word, never a bare year, except under `15 Travel` (the parent folder is the topic). Keep active code and git repos in a separate Projects folder outside the document cabinet so build artifacts and `.git` folders don't bloat OCR and search indexes. When the tree changes, update the cabinet's `README.md` (back it up to `plans\` first).
 
 ## 4. Session protocol
 

@@ -65,7 +65,7 @@ The top-level drawers are fixed. The subfolders shown are generic starting examp
 │   ├── Insurance Cards
 │   └── _Emergency
 ├── 15 Travel
-│   ├── Trips
+│   ├── <YYYY>
 │   └── Trip Ideas
 ├── 20 Health
 │   ├── <You>
@@ -95,6 +95,9 @@ The top-level drawers are fixed. The subfolders shown are generic starting examp
 ├── 60 Work
 │   ├── Career
 │   ├── Employers
+│   │   └── <Employer>
+│   │       └── Payslips
+│   │           └── <YYYY>
 │   └── Job Search
 ├── 65 Learning
 │   └── <Course or Subject>
@@ -114,14 +117,16 @@ The top-level drawers are fixed. The subfolders shown are generic starting examp
 └── OCR Originals
 ```
 
-**Stable vs. recurring.** Documents that never change get one folder; documents that repeat get a folder per year. IDs, passports, birth certificates, a property deed, or a will live in a single folder (`10 Identity\Passports`). Taxes, statements, and receipts come every year, so they're grouped by year (`40 Money\Taxes\2025_Tax`). When in doubt, ask: will I get a new one of these next year? If yes, organize by year; if no, keep it in one folder.
+**Stable vs. recurring.** Documents that never change get one folder; documents that repeat get a folder per year. IDs, passports, birth certificates, a property deed, or a will live in a single folder (`10 Identity\Passports`). Taxes, statements, receipts, trips, and payslips come every year, so they're grouped by year (`40 Money\Taxes\2025_Tax`, `15 Travel\2025`, `60 Work\Employers\<Employer>\Payslips\2025`). When in doubt, ask: will I get a new one of these next year? If yes, organize by year; if no, keep it in one folder.
 
 **A few placement rules worth knowing up front:**
 
 - The mortgage lives under **Home** (`30 Home\Mortgage`), not under Money. Statements are named by date; a refinance gets its own `Mortgage\<Lender>_<YYYY>` folder.
+- Payslips live under **Work**, grouped by year: `60 Work\Employers\<Employer>\Payslips\<YYYY>`. They do not go under Money.
 - Your personal drawer (`75 <You>`) starts with one **Miscellaneous Personal Docs** folder. Split out a topic folder only once it has enough files to justify it.
 - Put the person in the filename, not in a folder, except in Health and Kids, where a drawer is mostly per-person.
-- A subfolder name always needs a topic word. Never use a bare year (`2025_Photos`, not `2025`).
+- Keep active code and git repos in a separate Projects folder outside the document cabinet so build artifacts and `.git` folders don't bloat OCR and search indexes.
+- A subfolder name always needs a topic word. Never use a bare year (`2025_Photos`, not `2025`), except under `15 Travel`, where the parent folder is the topic (`15 Travel\2025`).
 
 ---
 
@@ -163,7 +168,7 @@ Do this on your Windows PC, in PowerShell.
 
 4. **Ask the agent to finish setup without moving your files yet:**
 
-   > Run Prompt A from the README, but the scripts already exist. Create the cabinet folders, the plans files, and the shortcuts, then run the tests in Part 4. Do not move, rename, or OCR any of my real files yet.
+   > The scripts already exist. Create the cabinet folders, the plans files, and the shortcuts, then confirm they work. Do not move, rename, or OCR any of my real files yet.
 
 5. **When you're ready to file things,** start with `00 Inbox`, Downloads, or Desktop. The agent scans, shows you a plan, and applies it only after you approve. Every apply writes an undo log.
 
@@ -176,7 +181,7 @@ Do this on your Windows PC, in PowerShell.
    pythonw scripts\sonar_app.pyw
    ```
 
-The full guide, naming rules, session protocol, and longer prompts live in [README.md](README.md).
+The full guide, naming rules, and session protocol live in [README.md](README.md). Session prompts (per-folder and unattended bulk) are summarized there too.
 
 ---
 
@@ -194,7 +199,7 @@ Copy everything in the block below, fill in the household lines, and paste it wi
 ````text
 You are setting up a local, privacy-preserving personal file-organization system on my Windows PC. Read the GETTING_STARTED.md file I provided (and README.md / AGENTS.md if they are in the current folder) and follow them. Use PowerShell and Python only. No cloud uploads.
 
-If this folder is the ai-file-organizer repo (scripts\, AGENTS.md, config.example.json exist), use the existing scripts. Do not rewrite them. If I only gave you GETTING_STARTED.md, help me clone the repo or, if I ask you to build from this file alone, build the tools it describes. In either case: do NOT move, rename, or OCR any of my real files until setup is done and I approve a plan.
+If this folder is the file-organizer-kit repo (scripts\, AGENTS.md, config.example.json exist), use the existing scripts. Do not rewrite them. If I only gave you GETTING_STARTED.md, help me clone the repo or, if I ask you to build from this file alone, build the tools it describes. In either case: do NOT move, rename, or OCR any of my real files until setup is done and I approve a plan.
 
 MY HOUSEHOLD (edit before running):
 - Cabinet root: %USERPROFILE%\Documents\Family
@@ -230,9 +235,11 @@ ssort --apply <plan.csv>                    # apply after you review
 ssort --undo plans\undo-log-sort-<stamp>.csv
 ```
 
-Or open the **Sonar** desktop app: Search, Sort a folder, and Expiring tabs, with a preview pane.
+Or open the **Sonar** desktop app: Search, Sort a folder, and Expiring tabs, with a preview pane. If you added an external-drive index to `extra_indexes` in `config.json`, the Source dropdown (and `sonar --source`) can search it, including an offline copy when the drive is unplugged.
 
 Drop new files into `00 Inbox`. Every week or so, run `ssort` on Inbox and Downloads, or ask the agent to file what's new. When you review `To Review\For Deletion`, you empty it yourself.
+
+To copy new cabinet files to an external drive without overwriting or deleting anything already there: `python scripts\sonar_backup.py` (dry-run), then `--apply`. Details are in [README.md](README.md) section 12.
 
 ---
 
@@ -241,4 +248,4 @@ Drop new files into `00 Inbox`. Every week or so, run `ssort` on Inbox and Downl
 - A move failed because a file was open: close it and rerun. The agent should have skipped it and logged it.
 - You want to undo a batch: `.\scripts\undo-manifest.ps1 -Log plans\undo-log-<stamp>.csv` first as a dry run, then `-Apply`.
 - Search can't find words inside a scan: run the OCR plan/apply, then `sonar --reindex`.
-- The full troubleshooting table is in [README.md](README.md) (section 12). If you only have this file, ask your LLM to walk through the safety rules above and the undo log before trying anything else.
+- The full troubleshooting table is in [README.md](README.md) (section 13). If you only have this file, ask your LLM to walk through the safety rules above and the undo log before trying anything else.

@@ -362,7 +362,7 @@
         ]
       },
       "match_mode": "any",
-      "dest": "15 Travel\\Trips",
+      "dest": "15 Travel\\{year}",
       "confidence": 0.84
     },
     {
@@ -427,13 +427,27 @@
       "confidence": 0.84
     },
     {
+      "id": "payslips",
+      "description": "Payslips, grouped by employer and year under Work (not Money)",
+      "match": {
+        "keywords": [
+          "payslip",
+          "pay slip",
+          "payslips",
+          "pay stub",
+          "paystub"
+        ]
+      },
+      "match_mode": "any",
+      "dest": "60 Work\\Employers\\{employer}\\Payslips\\{year}",
+      "confidence": 0.86
+    },
+    {
       "id": "employment",
-      "description": "Offer letters, pay stubs, performance reviews (add a rule per employer if you like)",
+      "description": "Offer letters, performance reviews, employment verification (add a rule per employer if you like)",
       "match": {
         "keywords": [
           "offer letter",
-          "pay stub",
-          "paystub",
           "performance review",
           "employment verification"
         ]
@@ -456,6 +470,20 @@
       "match_mode": "any",
       "dest": "{you_folder}\\Miscellaneous Personal Docs",
       "confidence": 0.7
+    },
+    {
+      "id": "ebooks",
+      "description": "E-books (EPUB, Mobipocket, Kindle)",
+      "match": {
+        "extensions": [
+          ".epub",
+          ".mobi",
+          ".azw3"
+        ]
+      },
+      "match_mode": "all",
+      "dest": "65 Learning\\Books",
+      "confidence": 0.8
     },
     {
       "id": "dated_photos",
