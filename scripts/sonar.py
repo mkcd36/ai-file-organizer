@@ -47,6 +47,8 @@ class SearchHit:
     root: str
     rel_path: str
     source: str = ""
+    size: int = 0
+    mtime_ns: int = 0
 
 
 @dataclass(frozen=True)
@@ -265,6 +267,8 @@ def _rows_to_hits(rows: list[dict], cfg: dict, source: str = "") -> list[SearchH
                 root=row["root"],
                 rel_path=rel_path,
                 source=source,
+                size=int(row.get("size") or 0),
+                mtime_ns=int(row.get("mtime_ns") or 0),
             )
         )
     return hits
@@ -462,6 +466,107 @@ def _search_one(
         return _rows_to_hits(rows, cfg, source=source_label), mode
     finally:
         conn.close()
+
+
+@dataclass(frozen=True)
+class SourceStatus:
+    """Health of one search source: Online, Unplugged, or No index."""
+
+    name: str
+    label: str
+    state: str
+    message: str = ""
+    indexed_at: str = ""
+
+    @property
+    def online(self) -> bool:
+        return self.state == "Online"
+
+
+def _index_timestamp(db: Path) -> str:
+    """When the index was last written, as local Eastern time text."""
+    mtimes = []
+    for candidate in (db, db.with_name(db.name + "-wal")):
+        try:
+            mtimes.append(candidate.stat().st_mtime)
+        except OSError:
+            continue
+    if not mtimes:
+        return ""
+    mtime = max(mtimes)
+    try:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        when = datetime.fromtimestamp(mtime, ZoneInfo("America/New_York"))
+        return when.strftime("%Y-%m-%d %I:%M %p ET")
+    except Exception:
+        from datetime import datetime
+
+        return datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %I:%M %p")
+
+
+def source_statuses(cfg: dict | None = None) -> list[SourceStatus]:
+    """Check each configured source: are its roots mounted and is its index present?"""
+    cfg = cfg or load_config(None)
+    out: list[SourceStatus] = []
+    for src in configured_sources(cfg):
+        try:
+            src_cfg = cfg_for_source(src, cfg)
+        except Exception as exc:  # unreadable per-source config
+            out.append(SourceStatus(src.name, src.label, "No index", str(exc)))
+            continue
+        stamp = _index_timestamp(Path(src_cfg["index_db"]))
+        message = _roots_disconnected(src_cfg)
+        if message:
+            out.append(SourceStatus(src.name, src.label, "Unplugged", message, stamp))
+        elif not Path(src_cfg["index_db"]).is_file():
+            out.append(SourceStatus(src.name, src.label, "No index", f"Index not found: {src.db}", stamp))
+        else:
+            out.append(SourceStatus(src.name, src.label, "Online", "", stamp))
+    return out
+
+
+def browse(
+    limit: int = 500,
+    cfg: dict | None = None,
+    folder: str | None = None,
+    person: str | None = None,
+    file_type: str | None = None,
+    source: str | None = None,
+    warnings: list[str] | None = None,
+) -> list[SearchHit]:
+    """List indexed files matching filters only (no query), sorted by name."""
+    from sonar_index import _filter_sql
+
+    cfg = cfg or load_config(None)
+    hits: list[SearchHit] = []
+    for src in resolve_sources(source, cfg):
+        src_cfg = cfg_for_source(src, cfg)
+        if not Path(src_cfg["index_db"]).is_file():
+            _note(warnings, f"{src.label}: index not found ({src.db}). Skipped.")
+            continue
+        try:
+            conn = connect_ro(src_cfg)
+        except FileNotFoundError as exc:
+            _note(warnings, f"{src.label}: {exc}")
+            continue
+        try:
+            extra_sql, params = _filter_sql(folder, person, file_type)
+            rows = conn.execute(
+                f"""SELECT f.root, f.rel_path, f.name, f.size, f.mtime_ns
+                    FROM files f WHERE 1=1 {extra_sql}
+                    ORDER BY lower(f.name) LIMIT ?""",
+                [*params, limit],
+            ).fetchall()
+        except sqlite3.Error as exc:
+            _note(warnings, f"{src.label}: {exc}")
+            continue
+        finally:
+            conn.close()
+        hits.extend(_rows_to_hits([dict(r) for r in rows], src_cfg, source=src.label))
+    hits.sort(key=lambda h: h.name.lower())
+    return hits[:limit]
 
 
 def expiring(
