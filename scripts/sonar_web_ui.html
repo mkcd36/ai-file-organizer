@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sonar</title>
+<style>
+:root{
+  --bg:#F3F4F6; --surface:#FFFFFF; --surface-2:#F9FAFB; --border:#E5E7EB; --border-strong:#D1D5DB;
+  --text:#111827; --text-2:#4B5563; --muted:#6B7280; --accent:#0F6CBD; --accent-h:#115EA3; --accent-soft:#EBF3FC;
+  --green:#107C10; --green-soft:#E7F4E4; --red:#C42B1C; --red-soft:#FDE7E9; --amber:#9D5D00; --amber-soft:#FFF4CE;
+  --row-h:34px; --shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06); --shadow-lg:0 10px 30px rgba(16,24,40,.18);
+  --radius:8px; --font:"Segoe UI Variable Text","Segoe UI Variable","Segoe UI",Inter,system-ui,-apple-system,sans-serif;
+  --mono:"Cascadia Mono",Consolas,ui-monospace,monospace; --preview-w:380px;
+}
+[data-theme=dark]{
+  --bg:#141414; --surface:#1F1F1F; --surface-2:#262626; --border:#333333; --border-strong:#454545;
+  --text:#F3F4F6; --text-2:#C9CDD2; --muted:#9CA3AF; --accent:#4CA2E8; --accent-h:#6CB4EE; --accent-soft:#1B2E42;
+  --green:#6CCB5F; --green-soft:#1D2F1B; --red:#FF99A4; --red-soft:#3B1D21; --amber:#F2C661; --amber-soft:#3A3018;
+  --shadow:0 1px 2px rgba(0,0,0,.4); --shadow-lg:0 10px 30px rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--font);font-size:13px;color:var(--text);background:var(--bg);display:flex;flex-direction:column;overflow:hidden;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.appbar{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;letter-spacing:-.01em}
+.brand .logo{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#0F6CBD,#4CA2E8);display:grid;place-items:center;color:#fff;font-size:12px}
+.tabs{display:flex;gap:2px}
+.tab{border:0;background:transparent;padding:7px 12px;border-radius:6px;cursor:pointer;color:var(--text-2);display:flex;align-items:center;gap:6px;position:relative}
+.tab:hover{background:var(--surface-2);color:var(--text)}
+.tab[aria-selected=true]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.tab .count{background:var(--red);color:#fff;border-radius:999px;font-size:10.5px;padding:0 6px;line-height:16px;font-weight:600}
+.spacer{flex:1}
+.sources{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.chip{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:4px 10px;display:flex;gap:6px;align-items:center;cursor:pointer;color:var(--text-2);transition:background .12s,border-color .12s}
+.chip:hover{border-color:var(--border-strong);background:var(--surface-2)}
+.chip[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:600}
+.chip small{color:var(--muted);font-weight:400}
+.chip small.stale{color:var(--amber)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block}
+.dot.off{background:transparent;border:1.5px solid var(--red)}
+.dot.none{background:var(--muted)}
+.btn{border:1px solid var(--border-strong);background:var(--surface);border-radius:6px;padding:6px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:background .12s,border-color .12s,box-shadow .12s}
+.btn:hover:not(:disabled){background:var(--surface-2);border-color:var(--muted)}
+.btn:focus-visible,.chip:focus-visible,.tab:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn.primary:hover:not(:disabled){background:var(--accent-h);border-color:var(--accent-h)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--accent)}
+.btn.ghost:hover:not(:disabled){background:var(--accent-soft)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sm{padding:3px 9px;font-size:12px}
+.icon-btn{border:0;background:transparent;border-radius:6px;width:30px;height:30px;cursor:pointer;color:var(--text-2);display:grid;place-items:center}
+.icon-btn:hover{background:var(--surface-2);color:var(--text)}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+main{flex:1;min-height:0;display:flex;flex-direction:column;padding:12px 16px 0;gap:10px}
+section.view{display:none;flex:1;min-height:0;flex-direction:column;gap:10px}
+section.view.active{display:flex}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+.toolbar{padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.searchbox{flex:1;min-width:260px;display:flex;align-items:center;gap:8px;border:1px solid var(--border-strong);border-radius:6px;padding:0 10px;background:var(--surface);height:34px;border-bottom:2px solid var(--accent)}
+.searchbox input{border:0;outline:0;flex:1;background:transparent;height:100%;font-size:14px}
+.field{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
+.field select,.field input,input.text{border:1px solid var(--border-strong);border-radius:6px;background:var(--surface);height:30px;padding:0 8px;min-width:120px}
+input.text{height:32px}
+.field input[type=date]{min-width:136px}
+.field input[type=checkbox]{min-width:0;height:auto}
+.hint{color:var(--muted);font-size:12px}
+.link{color:var(--accent);background:none;border:0;cursor:pointer;padding:0;font-size:12px}
+.link:hover{text-decoration:underline}
+.split{flex:1;min-height:0;display:flex;gap:10px}
+.tablecard{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.tablehead{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap;min-height:40px}
+.tablehead b{font-weight:600}
+.tablehead .meta{color:var(--muted);font-size:12px}
+.tablewrap{flex:1;min-height:0;overflow:auto;position:relative}
+table.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;table-layout:fixed}
+.grid th{position:sticky;top:0;z-index:2;background:var(--surface-2);text-align:left;font-weight:600;font-size:12px;color:var(--text-2);padding:0 10px;height:32px;border-bottom:1px solid var(--border);white-space:nowrap;user-select:none}
+.grid th.sortable{cursor:pointer}
+.grid th.sortable:hover{color:var(--text)}
+.grid th .arr{color:var(--accent);margin-left:4px;font-size:10px}
+.grid td{height:var(--row-h);padding:0 10px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0}
+.grid tbody tr:hover td{background:var(--surface-2)}
+.grid tbody tr.sel td{background:var(--accent-soft)}
+.grid tbody tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.grid tbody tr.past td{background:color-mix(in srgb,var(--red-soft) 70%,transparent)}
+.grid tbody tr.soon td{background:color-mix(in srgb,var(--amber-soft) 60%,transparent)}
+.grid tbody tr.dim td{color:var(--muted)}
+.grid td.num{text-align:right;font-variant-numeric:tabular-nums}
+.grid td.mono{font-family:var(--mono);font-size:11.5px;color:var(--text-2)}
+.grid tr.spacer td{padding:0;border:0;height:0}
+.grid mark{background:color-mix(in srgb,var(--accent) 22%,transparent);color:inherit;border-radius:2px;padding:0 1px}
+.name{font-weight:500}
+.ficon{display:inline-block;width:16px;margin-right:6px;text-align:center;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:1px 8px;font-size:11.5px;font-weight:600;line-height:18px;white-space:nowrap;border:1px solid transparent}
+.pill.on{background:var(--green-soft);color:var(--green)}
+.pill.off{background:var(--red-soft);color:var(--red)}
+.pill.past{background:var(--red);color:#fff}
+.pill.soon{background:var(--amber-soft);color:var(--amber);border-color:color-mix(in srgb,var(--amber) 35%,transparent)}
+.pill.move{background:var(--accent-soft);color:var(--accent)}
+.pill.inbox{background:var(--amber-soft);color:var(--amber)}
+.pill.skip{background:var(--surface-2);color:var(--muted);border-color:var(--border)}
+.pill.type{background:var(--surface-2);color:var(--text-2);border-color:var(--border);font-weight:500}
+.pill.conflict{background:var(--amber-soft);color:var(--amber)}
+.pill.error{background:var(--red-soft);color:var(--red)}
+.pill.copy{background:var(--green-soft);color:var(--green)}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.seg button{border:0;background:var(--surface);padding:4px 10px;cursor:pointer;color:var(--text-2);border-right:1px solid var(--border);font-size:12px}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.preview{width:var(--preview-w);flex:0 0 var(--preview-w);display:flex;flex-direction:column;overflow:hidden;transition:width .15s,flex-basis .15s}
+.preview.collapsed{width:40px;flex-basis:40px}
+.preview.collapsed .pv-body,.preview.collapsed .pv-title{display:none}
+.pv-head{display:flex;align-items:center;gap:6px;padding:8px 8px 8px 12px;border-bottom:1px solid var(--border);min-height:40px}
+.pv-title{font-weight:600;font-size:12px;color:var(--text-2);flex:1}
+.pv-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+.pv-name{font-size:15px;font-weight:600;word-break:break-word;line-height:1.35}
+.path{font-family:var(--mono);font-size:11.5px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:8px;word-break:break-all;user-select:all}
+.pv-actions{display:flex;gap:8px;flex-wrap:wrap}
+.pv-img{max-width:100%;max-height:320px;border-radius:6px;border:1px solid var(--border);object-fit:contain;background:var(--surface-2);align-self:flex-start}
+.pv-text{font-family:var(--mono);font-size:11.5px;white-space:pre-wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:8px;max-height:280px;overflow:auto}
+.snippet{font-size:12.5px;line-height:1.5;color:var(--text-2);background:var(--surface-2);border-radius:6px;padding:8px 10px;border:1px solid var(--border)}
+.snippet mark{background:color-mix(in srgb,var(--accent) 22%,transparent);color:inherit}
+.callout{border-radius:8px;padding:12px;display:flex;gap:10px;align-items:flex-start;border:1px solid}
+.callout .ic{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;flex:0 0 28px;font-weight:700}
+.callout h4{margin:0 0 4px;font-size:13px}
+.callout p{margin:0 0 8px;color:var(--text-2);font-size:12px;line-height:1.45}
+.callout.red{background:var(--red-soft);border-color:color-mix(in srgb,var(--red) 30%,transparent)} .callout.red .ic{background:color-mix(in srgb,var(--red) 18%,transparent);color:var(--red)}
+.callout.amber{background:var(--amber-soft);border-color:color-mix(in srgb,var(--amber) 30%,transparent)} .callout.amber .ic{background:color-mix(in srgb,var(--amber) 18%,transparent);color:var(--amber)}
+.callout.blue{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 30%,transparent)} .callout.blue .ic{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+.empty{flex:1;display:grid;place-items:center;text-align:center;color:var(--muted);padding:40px}
+.empty h3{color:var(--text);font-size:16px;margin:8px 0 4px;font-weight:600}
+.empty .glyph{font-size:30px;opacity:.6}
+.safety{display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:var(--green-soft);color:var(--green);border:1px solid color-mix(in srgb,var(--green) 25%,transparent);border-radius:6px;padding:6px 10px;font-size:12px}
+.safety b{font-weight:600}
+.actionbar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--border);background:var(--surface-2);flex-wrap:wrap}
+.conf{display:inline-flex;align-items:center;gap:6px}
+.conf i{display:inline-block;width:46px;height:4px;border-radius:2px;background:var(--border);overflow:hidden;position:relative}
+.conf i b{position:absolute;inset:0 auto 0 0;background:var(--accent)}
+.conf i b.low{background:var(--amber)}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px}
+.stat{padding:12px 14px}
+.stat .lbl{color:var(--text-2);font-size:12px;display:flex;align-items:center;gap:6px}
+.stat .val{font-size:28px;font-weight:700;margin-top:4px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat .sub{color:var(--muted);font-size:11.5px}
+.stat.copy .val{color:var(--accent)} .stat.conflict .val{color:var(--amber)} .stat.error .val{color:var(--red)}
+.fromto{display:flex;align-items:center;gap:14px;padding:12px 14px;flex-wrap:wrap}
+.fromto .end{display:flex;flex-direction:column;gap:2px;min-width:0}
+.fromto .end small{color:var(--muted);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
+.fromto .end span{font-family:var(--mono);font-size:12px;word-break:break-all}
+.statusbar{display:flex;gap:12px;align-items:center;padding:6px 16px;margin-top:10px;font-size:12px;color:var(--muted);background:var(--surface);border-top:1px solid var(--border);min-height:30px}
+.statusbar .msg{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.statusbar .msg.err{color:var(--red)}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.32);display:none;place-items:center;z-index:50}
+.modal-bg.open{display:grid}
+.modal{width:min(520px,92vw);max-height:85vh;overflow:auto;background:var(--surface);border-radius:10px;box-shadow:var(--shadow-lg);border:1px solid var(--border)}
+.modal h3{margin:0;padding:16px 18px 6px;font-size:16px}
+.modal .mb{padding:4px 18px 12px;color:var(--text-2);line-height:1.5}
+.modal .mf{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;background:var(--surface-2);border-top:1px solid var(--border)}
+.modal table{width:100%;border-collapse:collapse;font-size:12.5px}
+.modal td{padding:4px 6px;border-bottom:1px solid var(--border);vertical-align:top}
+.modal td:first-child{font-family:var(--mono);white-space:nowrap;color:var(--accent)}
+.toast{position:fixed;right:18px;bottom:44px;background:var(--text);color:var(--surface);padding:9px 14px;border-radius:8px;box-shadow:var(--shadow-lg);opacity:0;transform:translateY(8px);transition:all .2s;z-index:60;max-width:440px}
+.toast.show{opacity:1;transform:none}
+input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px;cursor:pointer;vertical-align:middle}
+kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--border-strong);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--surface-2)}
+.hidden{display:none!important}
+@media (max-width:1100px){:root{--preview-w:320px}.cards{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header class="appbar">
+  <div class="brand"><span class="logo">◉</span>Sonar</div>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="search" aria-selected="true" title="Search (Ctrl+1)">⌕ Search</button>
+    <button class="tab" role="tab" data-tab="sort" title="Sort a folder (Ctrl+2)">⇄ Sort a folder</button>
+    <button class="tab" role="tab" data-tab="expiring" title="Expiring (Ctrl+3)">◷ Expiring <span class="count hidden" id="expBadge"></span></button>
+    <button class="tab" role="tab" data-tab="backup" title="Backup to external drive (Ctrl+4)">⛁ Backup</button>
+  </nav>
+  <div class="spacer"></div>
+  <div class="sources" id="sources" aria-label="Source"></div>
+  <button class="btn sm" id="checkDrives" title="Re-check whether local and external drives are connected and read index timestamps">↻ Check drives</button>
+  <button class="btn sm" id="refreshIndex" title="Re-scan files on connected drives to pick up moved, renamed, or new files">⟳ Refresh index</button>
+  <button class="icon-btn" id="themeBtn" title="Switch light / dark theme">◐</button>
+</header>
+
+<main>
+<section class="view active" id="view-search">
+  <div class="card toolbar">
+    <form class="row" id="searchForm" autocomplete="off">
+      <div class="searchbox"><span style="color:var(--muted)">⌕</span>
+        <input id="q" placeholder="Search names and indexed text…" aria-label="Search">
+        <button type="button" class="icon-btn" id="qClear" title="Clear search" style="width:24px;height:24px">✕</button>
+        <button type="button" class="link" id="tipsBtn">Search tips</button>
+      </div>
+      <button class="btn primary" type="submit">Search</button>
+      <button class="btn hidden" type="button" id="ebooksBtn" title="List every eBook in the index, sorted by name">📚 eBooks library</button>
+    </form>
+    <div class="row">
+      <label class="field">Folder <select id="fFolder"><option value="">Any folder</option></select></label>
+      <label class="field">Person <select id="fPerson"><option value="">Anyone</option></select></label>
+      <label class="field">Type <select id="fType"><option value="">Any type</option></select></label>
+      <label class="field">From <input type="date" id="fFrom"></label>
+      <label class="field">To <input type="date" id="fTo"></label>
+      <button class="btn sm ghost" type="button" id="clearFilters">✕ Clear filters</button>
+      <span class="hint" id="filterHint"></span>
+    </div>
+  </div>
+  <div class="split">
+    <div class="card tablecard">
+      <div class="tablehead"><b id="sCount">Ready</b><span class="meta" id="sMeta"></span><button class="link hidden" id="moreBtn" title="Fetch up to 1,000 results per drive (slower: also scans text)">Show more results</button><div class="spacer"></div><span class="meta" id="sSortNote"></span></div>
+      <div class="tablewrap" id="sWrap"></div>
+    </div>
+    <aside class="card preview" id="pv-search"></aside>
+  </div>
+</section>
+
+<section class="view" id="view-sort">
+  <div class="card toolbar">
+    <div class="row">
+      <label class="field" style="flex:1;min-width:280px">Folder <input class="text" id="sortFolder" style="flex:1" placeholder="Paste a folder path, or pick a preset →"></label>
+      <span id="sortPresets" class="row"></span>
+      <label class="field"><input type="checkbox" id="sortRecursive"> Include subfolders</label>
+      <button class="btn primary" id="scanBtn">Scan &amp; Preview</button>
+    </div>
+    <div class="safety"><b>✔ Safe by design</b><span>Nothing is deleted · existing files are never overwritten · system files are skipped · every apply saves an undo log</span></div>
+  </div>
+  <div class="split">
+    <div class="card tablecard">
+      <div class="tablehead">
+        <b id="sortCount">No plan yet</b>
+        <div class="seg hidden" id="sortSeg"></div>
+        <div class="spacer"></div>
+        <span class="meta" id="sortIncluded"></span>
+        <button class="link hidden" id="openPlan">📄 Open plan CSV</button>
+      </div>
+      <div class="tablewrap" id="sortWrap"></div>
+      <div class="actionbar">
+        <button class="btn" id="applyBtn" disabled>✔ Apply selected (0)</button>
+        <button class="btn" id="undoBtn" title="Move the files from the last Sort apply back where they came from">↶ Undo last</button>
+        <span class="hint" id="sortConsequence">Nothing moves until you apply.</span>
+      </div>
+    </div>
+    <aside class="card preview" id="pv-sort"></aside>
+  </div>
+</section>
+
+<section class="view" id="view-expiring">
+  <div class="card toolbar">
+    <div class="row">
+      <span>Show past due and due within</span>
+      <input class="text" id="expDays" type="number" min="1" value="180" style="width:80px;min-width:0">
+      <span>days</span>
+      <div class="seg" id="expPresets"></div>
+      <button class="btn" id="expRefresh">↻ Refresh</button>
+      <div class="spacer"></div>
+      <span class="pill past hidden" id="expPast"></span>
+      <span class="pill soon hidden" id="expSoon"></span>
+    </div>
+  </div>
+  <div class="split">
+    <div class="card tablecard">
+      <div class="tablehead"><b id="expCount">—</b><span class="meta">Documents named <kbd>EXP_YYYY-MM-DD</kbd> (or legacy <kbd>Exp-YYYY-MM-DD</kbd>), soonest first</span></div>
+      <div class="tablewrap" id="expWrap"></div>
+      <div class="actionbar hidden" id="expMore"></div>
+    </div>
+    <aside class="card preview" id="pv-expiring"></aside>
+  </div>
+</section>
+
+<section class="view" id="view-backup">
+  <div class="card fromto">
+    <div class="end"><small>From</small><b>Local cabinet</b><span id="bkSrc">—</span></div>
+    <span style="font-size:18px;color:var(--muted)">→</span>
+    <div class="end"><small>To</small><b>External drive <span class="pill" id="bkState">…</span></b><span id="bkDest">—</span></div>
+    <div class="spacer"></div>
+    <label class="field" title="Off = fast preview using the current indexes. Run backup always re-indexes both drives first unless you untick it in the confirm dialog."><input type="checkbox" id="bkPre"> Re-index both drives first</label>
+    <button class="btn primary" id="bkPreview">▷ Preview backup</button>
+    <button class="btn" id="bkRun" disabled title="Available after a dry run finishes and the drive is online">⧉ Run backup</button>
+  </div>
+  <div class="row" style="justify-content:space-between"><div><b id="bkTitle">No dry run yet</b> <span class="hint" id="bkWhen"></span></div><button class="link hidden" id="bkLog">📄 Open log CSV</button></div>
+  <div class="cards">
+    <div class="card stat copy"><div class="lbl">⧉ New to copy</div><div class="val" id="cCopy">—</div><div class="sub" id="cCopySub">new files</div></div>
+    <div class="card stat"><div class="lbl">✓ Already on drive</div><div class="val" id="cSkip">—</div><div class="sub">same SHA-256 already there</div></div>
+    <div class="card stat conflict"><div class="lbl">⚠ Sync conflicts</div><div class="val" id="cConflict">—</div><div class="sub">same path, different content → To Review\Sync Conflicts\</div></div>
+    <div class="card stat error"><div class="lbl">⊘ Errors</div><div class="val" id="cError">—</div><div class="sub">unreadable files</div></div>
+  </div>
+  <div class="split">
+    <div class="card tablecard">
+      <div class="tablehead"><b id="bkListTitle">Preview list</b><span class="meta">New files and conflicts only — duplicates are skipped</span></div>
+      <div class="tablewrap" id="bkWrap"></div>
+    </div>
+    <aside class="card preview" id="pv-backup"></aside>
+  </div>
+  <div class="safety"><b>✔ Additive only</b><span>Nothing on the drive is ever deleted · a hash found anywhere on the drive is skipped · conflicts go to To Review\Sync Conflicts\ · dry run first</span></div>
+</section>
+</main>
+
+<footer class="statusbar"><span class="msg" id="status">Starting…</span><span id="statusRight"></span></footer>
+<div class="modal-bg" id="modal"><div class="modal" role="dialog" aria-modal="true"><h3 id="mTitle"></h3><div class="mb" id="mBody"></div><div class="mf" id="mFoot"></div></div></div>
+<div class="toast" id="toast"></div>
+<script>
+"use strict";
+const TOKEN = "__SONAR_TOKEN__";
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const hl = (v) => esc(v).replace(/\[([^\]\[]{1,200})\]/g, "<mark>$1</mark>");
+const humanSize = (n) => { if (!n) return ""; const u = ["B","KB","MB","GB","TB"]; let i = 0, x = n; while (x >= 1024 && i < 4) { x /= 1024; i++; } return (i ? x.toFixed(x < 10 ? 1 : 0) : x) + " " + u[i]; };
+const ICON = {PDF:"▤",Image:"▣",Word:"✎",Excel:"▦",eBook:"📖",Text:"≡",Video:"▶",Slides:"▭",Audio:"♪",Archive:"⧈",Other:"□"};
+const state = { source: "all", drives: [], meta: null, tab: "search" };
+
+async function api(path, opts = {}) {
+  const init = { headers: {} };
+  if (opts.body !== undefined) { init.method = "POST"; init.headers["Content-Type"] = "application/json"; init.headers["X-Sonar-Token"] = TOKEN; init.body = JSON.stringify(opts.body); }
+  const res = await fetch(path, init);
+  let data = {}; try { data = await res.json(); } catch {}
+  if (!res.ok) { const e = new Error(data.error || res.statusText); e.data = data; e.status = res.status; throw e; }
+  return data;
+}
+const qs = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v !== "" && v != null)).toString();
+function status(msg, err = false) { const el = $("#status"); el.textContent = msg; el.classList.toggle("err", err); el.title = msg; }
+let toastT; function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 3200); }
+function pollJob(id, onDone, onTick) {
+  const tick = async () => {
+    let j; try { j = await api("/api/job?id=" + id); } catch (e) { onDone(null, e); return; }
+    if (j.state === "running") { onTick && onTick(j); setTimeout(tick, 1000); } else onDone(j);
+  };
+  tick();
+}
+function modal(title, bodyHtml, buttons) {
+  $("#mTitle").textContent = title; $("#mBody").innerHTML = bodyHtml; const f = $("#mFoot"); f.innerHTML = "";
+  return new Promise(resolve => {
+    const close = () => $("#modal").classList.remove("open");
+    for (const b of buttons) { const el = document.createElement("button"); el.className = "btn " + (b.cls || ""); el.textContent = b.label; el.onclick = () => { const v = typeof b.value === "function" ? b.value() : b.value; close(); resolve(v); }; f.appendChild(el); }
+    $("#modal").classList.add("open"); $("#modal").onclick = (e) => { if (e.target.id === "modal") { close(); resolve(null); } };
+    modal.close = () => { close(); resolve(null); };
+    setTimeout(() => f.querySelector(".primary")?.focus(), 30);
+  });
+}
+const emptyRow = (cols, glyph, title, sub) => `<tr><td colspan="${cols}" style="height:auto;border:0;max-width:none;white-space:normal"><div class="empty"><div><div class="glyph">${glyph}</div><h3>${title}</h3><div>${sub}</div></div></div></td></tr>`;
+
+// Virtualised table: only visible rows are in the DOM, so thousands of rows paint instantly.
+class VTable {
+  constructor(wrap, { columns, rowClass, onSelect, onActivate, defaultSort }) {
+    Object.assign(this, { wrap, columns, rowClass, onSelect, onActivate });
+    this.rows = []; this.view = []; this.sel = -1; this.defaultSort = defaultSort || [null, false]; this.sort = [...this.defaultSort];
+    this.table = document.createElement("table"); this.table.className = "grid"; wrap.innerHTML = ""; wrap.appendChild(this.table);
+    this.rowH = 34; this.raf = 0;
+    wrap.addEventListener("scroll", () => { if (!this.raf) this.raf = requestAnimationFrame(() => { this.raf = 0; this.paint(); }); });
+    new ResizeObserver(() => { if (this.view.length) this.paint(); }).observe(wrap);
+    this.table.addEventListener("click", (e) => this.click(e));
+    this.table.addEventListener("dblclick", (e) => { const tr = e.target.closest("tr[data-i]"); if (tr && this.onActivate) this.onActivate(this.view[+tr.dataset.i]); });
+    wrap.tabIndex = 0; wrap.addEventListener("keydown", (e) => this.key(e));
+    this.renderHead();
+  }
+  setRows(rows, keepSort = false) { this.rows = rows; if (!keepSort) this.sort = [...this.defaultSort]; this.applySort(); this.sel = -1; this.wrap.scrollTop = 0; this.renderHead(); this.paint(); }
+  refresh() { this.applySort(); this.sel = -1; this.renderHead(); this.paint(); }
+  visibleCols() { return this.columns.filter(c => !c.hidden); }
+  applySort() {
+    const [key, desc] = this.sort; const col = this.columns.find(c => c.key === key);
+    this.view = this.filter ? this.rows.filter(this.filter) : this.rows.slice();
+    if (!col) return;
+    const get = col.sortValue || (r => r[key]);
+    this.view.sort((a, b) => { let x = get(a), y = get(b); if (typeof x === "string" || typeof y === "string") { x = String(x ?? "").toLowerCase(); y = String(y ?? "").toLowerCase(); } return (x < y ? -1 : x > y ? 1 : 0) * (desc ? -1 : 1); });
+  }
+  renderHead() {
+    const cols = this.visibleCols(); const [key, desc] = this.sort;
+    const ths = cols.map(c => `<th class="${c.sortable === false ? "" : "sortable"}" data-k="${c.key}" ${c.title ? `title="${esc(c.title)}"` : ""}>${c.headHtml || esc(c.label)}${key === c.key ? `<span class="arr">${desc ? "▼" : "▲"}</span>` : ""}</th>`).join("");
+    this.table.innerHTML = `<colgroup>${cols.map(c => `<col style="width:${c.width}px">`).join("")}</colgroup><thead><tr>${ths}</tr></thead><tbody></tbody>`;
+    this.tbody = this.table.tBodies[0]; this.afterHead && this.afterHead();
+  }
+  paint() {
+    const cols = this.visibleCols(); const n = this.view.length; const h = this.wrap.clientHeight || 600;
+    if (!n) return;
+    const start = Math.max(0, Math.floor(this.wrap.scrollTop / this.rowH) - 10); const end = Math.min(n, start + Math.ceil(h / this.rowH) + 20);
+    let html = `<tr class="spacer"><td colspan="${cols.length}" style="height:${start * this.rowH}px"></td></tr>`;
+    for (let i = start; i < end; i++) {
+      const r = this.view[i]; const cls = (i === this.sel ? "sel " : "") + (this.rowClass ? this.rowClass(r) : "");
+      html += `<tr data-i="${i}" class="${cls}">` + cols.map(c => `<td class="${c.cls || ""}" ${c.tip ? `title="${esc(c.tip(r))}"` : ""}>${c.render ? c.render(r) : esc(r[c.key])}</td>`).join("") + "</tr>";
+    }
+    html += `<tr class="spacer"><td colspan="${cols.length}" style="height:${(n - end) * this.rowH}px"></td></tr>`;
+    this.tbody.innerHTML = html;
+  }
+  empty(glyph, title, sub) { this.tbody.innerHTML = emptyRow(this.visibleCols().length, glyph, title, sub); }
+  click(e) {
+    const th = e.target.closest("th.sortable");
+    if (th) { if (e.target.closest("input")) return; const k = th.dataset.k; const [key, desc] = this.sort;
+      if (key !== k) this.sort = [k, false]; else if (!desc) this.sort = [k, true]; else this.sort = [...this.defaultSort];
+      const cur = this.sel >= 0 ? this.view[this.sel] : null; this.applySort(); this.sel = cur ? this.view.indexOf(cur) : -1;
+      this.renderHead(); this.paint(); this.onSort && this.onSort(); return; }
+    const tr = e.target.closest("tr[data-i]"); if (!tr) return;
+    if (this.onCellClick && this.onCellClick(e, this.view[+tr.dataset.i])) return;
+    this.select(+tr.dataset.i);
+  }
+  select(i) { if (i < 0 || i >= this.view.length) return; this.sel = i; const top = i * this.rowH, w = this.wrap;
+    if (top < w.scrollTop) w.scrollTop = top; else if (top + this.rowH + 32 > w.scrollTop + w.clientHeight) w.scrollTop = top + this.rowH + 36 - w.clientHeight;
+    this.paint(); this.onSelect && this.onSelect(this.view[i]); }
+  key(e) { if (e.key === "ArrowDown") { this.select(Math.min(this.view.length - 1, this.sel + 1)); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { this.select(Math.max(0, this.sel - 1)); e.preventDefault(); }
+    else if (e.key === "Enter" && this.sel >= 0 && this.onActivate) { this.onActivate(this.view[this.sel]); e.preventDefault(); e.stopPropagation(); } }
+}
+
+// Right-side preview pane (fixed width, collapsible; state shared by all tabs).
+const EMPTY_PV = `<div class="empty"><div><div class="glyph">◫</div><div>Select a row to preview it here.</div></div></div>`;
+function makePreview(id) {
+  const el = $("#" + id); const collapsed = localStorage.getItem("sonar.pv.collapsed") === "1";
+  el.classList.toggle("collapsed", collapsed);
+  el.innerHTML = `<div class="pv-head"><span class="pv-title">Preview</span><button class="icon-btn pv-toggle" title="Collapse / expand preview">${collapsed ? "‹" : "›"}</button></div><div class="pv-body">${EMPTY_PV}</div>`;
+  el.querySelector(".pv-toggle").onclick = () => {
+    const now = !el.classList.contains("collapsed"); localStorage.setItem("sonar.pv.collapsed", now ? "1" : "0");
+    document.querySelectorAll("aside.preview").forEach(p => { p.classList.toggle("collapsed", now); p.querySelector(".pv-toggle").textContent = now ? "‹" : "›"; });
+  };
+  return { body: el.querySelector(".pv-body"), clear() { this.current = null; this.body.innerHTML = EMPTY_PV; } };
+}
+const driveInfo = (label) => state.drives.find(d => d.label === label || d.name === label);
+function drivePill(item) {
+  const d = driveInfo(item.drive); const tip = d ? `${d.label} · ${d.state}${d.indexed_at ? " · indexed " + d.indexed_at : ""}` : item.drive;
+  return item.online === false ? `<span class="pill off" title="${esc(tip)}">○ ${esc(item.drive)} · Unplugged</span>` : `<span class="pill on" title="${esc(tip)}">● ${esc(item.drive)}</span>`;
+}
+function offlineCard(item) {
+  const d = driveInfo(item.drive); const head = (item.offline || "Drive is not connected.").split(". ")[0];
+  return `<div class="callout red"><div class="ic">⌁</div><div><h4>${esc(head)}.</h4><p>Plug in the drive to preview or open this file. This result comes from the offline index${d && d.indexed_at ? " copied " + esc(d.indexed_at) : ""}.</p><button class="btn sm" data-act="checkagain">↻ Check again</button></div></div>`;
+}
+function missingCard(item, info) {
+  const when = (info && info.indexed_at) || driveInfo(item.drive)?.indexed_at;
+  return `<div class="callout amber"><div class="ic">?</div><div><h4>Not at its indexed path</h4><p>This file may have been moved or renamed since the last index${when ? " (" + esc(item.drive || "index") + " last indexed " + esc(when) + ")" : ""}. Refreshing the index finds it at its new location.</p><button class="btn sm primary" data-act="refreshsearch">⟳ Refresh index &amp; search again</button></div></div>`;
+}
+async function renderFilePreview(pv, item, extraHtml = "") {
+  pv.current = item;
+  const t = item.type || "";
+  let html = `<div class="pv-name"><span class="ficon">${ICON[t] || "□"}</span>${esc(item.name)}</div>`;
+  html += `<div class="row">${item.drive ? drivePill(item) : ""}${t ? `<span class="pill type">${esc(t)}</span>` : ""}${item.size ? `<span class="hint">${humanSize(item.size)}</span>` : ""}${item.modified ? `<span class="hint">· ${esc(item.modified)}</span>` : ""}</div>`;
+  html += extraHtml + `<div class="pv-dyn"></div>`;
+  html += `<div><div class="hint" style="margin-bottom:4px">Full path</div><div class="path">${esc(item.path)}</div></div>`;
+  if (item.snippet && item.snippet !== item.folder) html += `<div><div class="hint" style="margin-bottom:4px">Snippet</div><div class="snippet">${hl(item.snippet)}</div></div>`;
+  const dis = item.online === false ? "disabled" : "";
+  html += `<div class="pv-actions"><button class="btn primary" data-act="open" ${dis}>↗ Open file</button><button class="btn" data-act="folder" ${dis}>🗀 Show in Explorer</button><button class="btn ghost" data-act="copy">Copy path</button></div>`;
+  pv.body.innerHTML = html;
+  const dyn = pv.body.querySelector(".pv-dyn");
+  pv.body.onclick = (e) => { const b = e.target.closest("[data-act]"); if (b && !b.disabled) previewAction(b.dataset.act, item, pv); };
+  if (item.online === false) { dyn.innerHTML = offlineCard(item); return; }
+  try {
+    const info = await api("/api/peek", { body: { path: item.path, drive: item.drive || "" } });
+    if (pv.current !== item) return;
+    const disable = () => pv.body.querySelectorAll("[data-act=open],[data-act=folder]").forEach(b => b.disabled = true);
+    if (info.offline) { item.online = false; item.offline = info.offline; dyn.innerHTML = offlineCard(item); disable(); return; }
+    if (info.missing) { dyn.innerHTML = missingCard(item, info); pv.body.querySelector("[data-act=open]").disabled = true; return; }
+    if (/\.(png|jpe?g|webp|gif|bmp)$/i.test(item.path)) dyn.innerHTML = `<img class="pv-img" alt="Image preview" src="/api/image?${qs({ p: item.path, t: TOKEN })}">`;
+    else if (info.text) dyn.innerHTML = `<div class="pv-text">${esc(info.text)}</div>`;
+  } catch (e) { if (pv.current === item) dyn.innerHTML = `<div class="hint">${esc(e.message)}</div>`; }
+}
+async function previewAction(act, item, pv) {
+  if (act === "copy") { try { await navigator.clipboard.writeText(item.path); toast("Path copied"); } catch { toast(item.path); } return; }
+  if (act === "checkagain") { await checkDrives(); rerunActive(); return; }
+  if (act === "refreshsearch") { refreshIndex(driveInfo(item.drive)?.name || state.source, true); return; }
+  if (item.online === false) { status(item.offline || "Drive is not connected.", true); return; }
+  try { await api("/api/open", { body: { path: item.path, mode: act === "folder" ? "folder" : "file" } }); status(act === "folder" ? "Opened in Explorer: " + item.path : "Opened " + item.name); }
+  catch (e) {
+    if (e.data && e.data.missing && pv) { const dyn = pv.body.querySelector(".pv-dyn"); if (dyn) dyn.innerHTML = missingCard(item); status("Moved or renamed since the last index — refresh the index to find it.", true); }
+    else status(e.message, true);
+  }
+}
+
+// Drives and Source chips
+function renderSources() {
+  const ds = state.drives; const online = ds.filter(d => d.state === "Online").length;
+  let html = `<button class="chip" data-src="all" aria-pressed="${state.source === "all"}" title="Search every drive. ${online} of ${ds.length} online.">All drives <small>(${online}/${ds.length} online)</small></button>`;
+  for (const d of ds) {
+    const on = d.state === "Online"; const dot = on ? "dot" : d.state === "Unplugged" ? "dot off" : "dot none";
+    const tip = `${d.label}\nPath: ${(d.roots || []).join(", ") || "—"}\nStatus: ${d.state}${d.message ? " — " + d.message : ""}\nLast indexed: ${d.indexed_at || "never"}${d.stale ? " (older than 24 hours — consider Refresh index)" : ""}`;
+    html += `<button class="chip" data-src="${esc(d.name)}" aria-pressed="${state.source === d.name}" title="${esc(tip)}"><span class="${dot}"></span>${esc(d.label)} <small>${on ? "Online" : esc(d.state)}</small>${d.indexed_short ? `<small class="${d.stale ? "stale" : ""}">· Indexed ${esc(d.indexed_short)}${d.stale ? " (stale)" : ""}</small>` : ""}</button>`;
+  }
+  $("#sources").innerHTML = html;
+}
+$("#sources").onclick = (e) => { const c = e.target.closest("[data-src]"); if (!c) return; state.source = c.dataset.src; localStorage.setItem("sonar.source", state.source); renderSources(); applyDriveColumn(); rerunActive(); };
+function indexLine() {
+  return (state.source === "all" ? state.drives : state.drives.filter(x => x.name === state.source))
+    .map(x => `${x.label} · ${x.indexed_short ? "Indexed " + x.indexed_short + (x.stale ? " (stale)" : "") : "not indexed"}${x.state !== "Online" ? " · " + x.state : ""}`).join("   ");
+}
+async function checkDrives(quiet = false) {
+  const b = $("#checkDrives"); b.disabled = true; b.innerHTML = `<span class="spin"></span> Checking…`;
+  try {
+    const d = await api("/api/drives"); state.drives = d.drives; state.backupInfo = d.backup;
+    if (state.source !== "all" && !state.drives.some(x => x.name === state.source)) state.source = "all";
+    renderSources(); renderBackupTarget();
+    if (!quiet) status(`Drives checked ${d.checked}:   ` + d.drives.map(x => `${x.label} ${x.state}${x.indexed_short ? " · Indexed " + x.indexed_short + (x.stale ? " (stale)" : "") : ""}`).join("   "));
+  } catch (e) { status("Check drives failed: " + e.message, true); }
+  finally { b.disabled = false; b.innerHTML = "↻ Check drives"; }
+}
+async function refreshIndex(source, thenRerun = false) {
+  const src = source || state.source; const label = src === "all" ? "all connected drives" : (driveInfo(src)?.label || src);
+  const ext = state.drives.some(d => d.name !== "local" && d.state === "Online" && (src === "all" || d.name === src));
+  if (ext) { const ok = await modal("Refresh index?", `Re-scan files on <b>${esc(label)}</b> to pick up moved, renamed, or new files.<br><br>An external USB drive can take a while (tens of minutes for a large drive). Sonar stays usable while it runs.`, [{ label: "Cancel", value: false }, { label: "Refresh index", value: true, cls: "primary" }]); if (!ok) return; }
+  const b = $("#refreshIndex"); b.disabled = true; b.innerHTML = `<span class="spin"></span> Indexing…`;
+  const done = () => { b.disabled = false; b.innerHTML = "⟳ Refresh index"; };
+  try {
+    const j = await api("/api/refresh-index", { body: { source: src } });
+    pollJob(j.id, async (res, err) => {
+      done();
+      if (err || !res || res.state === "error") { status("Refresh index failed: " + (err?.message || res?.error || ""), true); return; }
+      await checkDrives(true);
+      status(`Index refreshed for ${label} in ${res.elapsed}s.   ${indexLine()}` + (res.result && res.result.code ? "   (some sources reported errors)" : ""));
+      if (thenRerun) rerunActive();
+    }, (t) => status(`Refreshing index for ${label}… ${Math.round(t.elapsed)}s`));
+  } catch (e) { done(); status(e.message, true); }
+}
+$("#checkDrives").onclick = () => checkDrives().then(rerunActive);
+$("#refreshIndex").onclick = () => refreshIndex(null, true);
+
+function setTheme(t) { document.documentElement.dataset.theme = t; localStorage.setItem("sonar.theme", t); $("#themeBtn").textContent = t === "dark" ? "☀" : "◐"; }
+setTheme(localStorage.getItem("sonar.theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+$("#themeBtn").onclick = () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+
+function showTab(name) {
+  state.tab = name;
+  document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", t.dataset.tab === name));
+  document.querySelectorAll("section.view").forEach(v => v.classList.toggle("active", v.id === "view-" + name));
+  if (name === "expiring" && !state.expLoaded) loadExpiring();
+  if (name === "backup") loadBackupLast();
+  if (name === "search") setTimeout(() => $("#q").focus(), 0);
+}
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => showTab(t.dataset.tab));
+function rerunActive() { if (state.tab === "search") runSearch(true); else if (state.tab === "expiring") loadExpiring(); else if (state.tab === "backup") renderBackupTarget(); }
+
+// ---------- SEARCH
+const pvS = makePreview("pv-search");
+const driveCol = { key: "drive", label: "Drive", width: 160, render: r => drivePill(r), sortValue: r => r.drive + (r.online ? "0" : "1") };
+const sTable = new VTable($("#sWrap"), {
+  columns: [
+    driveCol,
+    { key: "name", label: "Name", width: 300, render: r => `<span class="ficon">${ICON[r.type] || "□"}</span><span class="name">${esc(r.name)}</span>`, tip: r => r.name },
+    { key: "type", label: "Type", width: 90, render: r => `<span class="pill type">${esc(r.type)}</span>` },
+    { key: "dir", label: "Path", width: 380, cls: "mono", tip: r => r.dir },
+    { key: "mtime", label: "Modified", width: 160, render: r => esc(r.modified) },
+    { key: "size", label: "Size", width: 84, cls: "num", render: r => humanSize(r.size) },
+    { key: "snippet", label: "Snippet", width: 380, sortable: false, render: r => hl(r.snippet), tip: r => r.snippet.replace(/[\[\]]/g, "") },
+  ],
+  onSelect: r => renderFilePreview(pvS, r),
+  onActivate: r => previewAction("open", r, pvS),
+});
+const SORT_NAMES = { drive: "Drive", name: "Name", type: "Type", dir: "Path", mtime: "Modified", size: "Size" };
+sTable.onSort = () => { const [k, d] = sTable.sort; $("#sSortNote").textContent = k ? `Sorted by ${SORT_NAMES[k] || k} ${d ? "▼" : "▲"}` : "Sorted by relevance"; };
+const expDriveCol = { key: "drive", label: "Drive", width: 160, render: r => drivePill(r) };
+function applyDriveColumn() {
+  const hide = state.source !== "all"; driveCol.hidden = hide; expDriveCol.hidden = hide;
+  for (const t of [sTable, typeof eTable === "undefined" ? null : eTable]) { if (!t) continue; t.renderHead(); if (t.view.length) t.paint(); }
+}
+let lastQuery = null, searchSeq = 0;
+const filters = () => ({ folder: $("#fFolder").value, person: $("#fPerson").value, type: $("#fType").value, from: $("#fFrom").value, to: $("#fTo").value });
+function activeFilters() { const f = filters(), p = []; if (f.folder) p.push("Folder: " + f.folder); if (f.person) p.push("Person: " + f.person); if (f.type) p.push("Type: " + f.type); if (f.from) p.push("From: " + f.from); if (f.to) p.push("To: " + f.to); return p; }
+function updateFilterHint() { const p = activeFilters(); $("#clearFilters").classList.toggle("hidden", !p.length); $("#filterHint").textContent = p.length ? "Active — " + p.join(" · ") : ""; }
+function idleSearch() {
+  sTable.setRows([]); pvS.clear(); $("#sCount").textContent = "Ready"; $("#sMeta").textContent = ""; $("#sSortNote").textContent = "";
+  sTable.empty("⌕", "Type a search and press Enter" + (state.meta?.show_ebooks ? ", or open the eBooks library." : "."), "Tip: press <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>F</kbd> from anywhere. <button class=\"link\" onclick=\"$('#tipsBtn').click()\">Search tips</button>");
+}
+async function runSearch(keep = false, limit = null) {
+  const q = $("#q").value.trim(); const f = filters(); updateFilterHint(); $("#moreBtn").classList.add("hidden");
+  const seq = ++searchSeq; const newQuery = q !== lastQuery; lastQuery = q;
+  if (!q && f.type !== "eBooks") { idleSearch(); status("Ready.   " + indexLine()); return; }
+  $("#sCount").innerHTML = `<span class="spin"></span> Searching…`;
+  try {
+    const t0 = performance.now();
+    const d = await api("/api/search?" + qs({ q, ...f, source: state.source, limit }));
+    if (seq !== searchSeq) return;
+    sTable.defaultSort = q ? [null, false] : ["name", false];
+    sTable.setRows(d.hits, keep && !newQuery); sTable.onSort();
+    const counts = {}; d.hits.forEach(h => counts[h.drive] = (counts[h.drive] || 0) + 1);
+    $("#sCount").textContent = `${d.hits.length.toLocaleString()} result${d.hits.length === 1 ? "" : "s"}` + (d.mode === "browse" ? " · eBooks library" : "");
+    $("#moreBtn").classList.toggle("hidden", !d.more);
+    $("#sMeta").textContent = Object.keys(counts).length > 1 ? Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(" · ") : "";
+    status(`${d.hits.length.toLocaleString()} result${d.hits.length === 1 ? "" : "s"} in ${Math.round(performance.now() - t0)} ms   ${indexLine()}` + (d.warnings.length ? "   ⚠ " + d.warnings.join(" ") : ""));
+    if (!d.hits.length) {
+      pvS.clear(); const p = activeFilters();
+      sTable.empty("⌕", "No results" + (q ? ` for “${esc(q)}”` : ""), p.length
+        ? `Active filters may be hiding results: <b>${esc(p.join(" · "))}</b>.<br><br><button class="btn sm" onclick="clearFilters()">✕ Clear filters and search again</button>`
+        : `Try fewer words, a prefix like <kbd>pass*</kbd>, or switch to <b>All drives</b>.`);
+    } else sTable.select(0);
+  } catch (e) { if (seq === searchSeq) { $("#sCount").textContent = "Search failed"; status(e.message, true); } }
+}
+function clearFilters() { ["#fFolder", "#fPerson", "#fType", "#fFrom", "#fTo"].forEach(s => $(s).value = ""); updateFilterHint(); runSearch(); }
+window.clearFilters = clearFilters;
+$("#searchForm").onsubmit = (e) => { e.preventDefault(); clearTimeout(deb); runSearch(); };
+let deb; $("#q").addEventListener("input", () => { clearTimeout(deb); const v = $("#q").value.trim(); if (v.length >= 2 || !v) deb = setTimeout(() => runSearch(), 280); });
+$("#qClear").onclick = () => { $("#q").value = ""; $("#q").focus(); runSearch(); };
+["#fFolder", "#fPerson", "#fType", "#fFrom", "#fTo"].forEach(s => $(s).addEventListener("change", () => runSearch()));
+$("#clearFilters").onclick = clearFilters;
+$("#moreBtn").onclick = () => runSearch(true, 1000);
+$("#ebooksBtn").onclick = () => { $("#fType").value = "eBooks"; runSearch(); };
+$("#tipsBtn").onclick = () => modal("Search tips", `<table>
+<tr><td>passport</td><td>any word, in names and indexed text</td></tr>
+<tr><td>"birth certificate"</td><td>exact phrase</td></tr>
+<tr><td>w2 OR 1099</td><td>either word</td></tr>
+<tr><td>tax -draft</td><td>leave out a word</td></tr>
+<tr><td>payslip*</td><td>words starting with “payslip”</td></tr></table>
+<p><b>Filters</b> — Folder / Person / Type narrow results. From / To match the file date or a date in the name. <b>Clear filters</b> resets them.</p>
+<p><b>Sorting</b> — click a column header; click again to reverse, a third time to return to relevance. A new query resets to relevance.</p>
+<p><b>Keys</b> — <kbd>Ctrl</kbd>+<kbd>F</kbd> or <kbd>/</kbd> focus search · <kbd>↑</kbd> <kbd>↓</kbd> move · <kbd>Enter</kbd> open · <kbd>Ctrl</kbd>+<kbd>1</kbd>–<kbd>4</kbd> switch tabs · <kbd>Esc</kbd> close dialogs</p>`, [{ label: "Got it", value: true, cls: "primary" }]);
+
+// ---------- SORT
+const pvSort = makePreview("pv-sort");
+const sortState = { plan: null, items: [], include: new Set(), filter: "all" };
+const sortTable = new VTable($("#sortWrap"), {
+  columns: [
+    { key: "chk", label: "", width: 42, sortable: false, headHtml: `<input type="checkbox" id="sortAll" title="Select all / none">`, render: r => r.action === "skip" ? `<span class="hint">—</span>` : `<input type="checkbox" data-chk="${r.id}" ${sortState.include.has(r.id) ? "checked" : ""}>` },
+    { key: "name", label: "File", width: 280, render: r => `<span class="name">${esc(r.name)}</span>`, tip: r => r.source },
+    { key: "action", label: "Action", width: 96, render: r => `<span class="pill ${r.action}">${r.action === "move" ? "→ Move" : r.action === "inbox" ? "⊡ Inbox" : "⊘ Skip"}</span>` },
+    { key: "dest_rel", label: "Proposed destination", width: 380, render: r => r.action === "skip" ? `<i class="hint">Left in place${r.note ? " — " + esc(r.note) : ""}</i>` : esc(r.dest_rel), tip: r => r.dest || "stays where it is" },
+    { key: "rule", label: "Rule", width: 180, cls: "mono" },
+    { key: "confidence", label: "Confidence", width: 120, render: r => `<span class="conf"><i><b class="${r.confidence < .6 ? "low" : ""}" style="width:${Math.round(r.confidence * 100)}%"></b></i>${r.confidence.toFixed(2)}</span>` },
+  ],
+  rowClass: r => r.action === "skip" ? "dim" : "",
+  onSelect: r => renderSortPreview(r),
+  onActivate: r => previewAction("open", { name: r.name, path: r.source }, pvSort),
+});
+sortTable.afterHead = () => {
+  const a = $("#sortAll"); if (!a) return; const inc = sortState.items.filter(i => i.action !== "skip");
+  a.checked = inc.length > 0 && inc.every(i => sortState.include.has(i.id)); a.indeterminate = !a.checked && inc.some(i => sortState.include.has(i.id));
+  a.onchange = () => { const on = a.checked; inc.forEach(i => on ? sortState.include.add(i.id) : sortState.include.delete(i.id)); updateSortBar(); sortTable.paint(); };
+};
+sortTable.onCellClick = (e, r) => { const c = e.target.closest("input[data-chk]"); if (!c) return false; c.checked ? sortState.include.add(r.id) : sortState.include.delete(r.id); updateSortBar(); sortTable.afterHead(); return true; };
+function renderSortPreview(r) {
+  const item = { name: r.name, path: r.source, drive: "", type: "", online: true };
+  const extra = r.action === "skip"
+    ? `<div class="callout blue"><div class="ic">⊘</div><div><h4>Stays where it is</h4><p>Rule <b>${esc(r.rule)}</b>${r.note ? " — " + esc(r.note) : ""}. Skipped rows never move.</p></div></div>`
+    : `<div class="callout blue"><div class="ic">→</div><div><h4>${r.action === "inbox" ? "Will move to the Inbox for review" : "Will move to"}</h4><p style="font-family:var(--mono);word-break:break-all">${esc(r.dest)}</p><p>Rule <b>${esc(r.rule)}</b> matched at ${r.confidence.toFixed(2)}. If a file with this name already exists there, this row is skipped — nothing is overwritten.</p></div></div>`;
+  renderFilePreview(pvSort, item, extra);
+}
+function updateSortBar() {
+  const n = sortState.include.size; const btn = $("#applyBtn");
+  btn.textContent = `✔ Apply selected (${n})`; btn.disabled = !n;
+  btn.classList.toggle("primary", !!sortState.plan); $("#scanBtn").classList.toggle("primary", !sortState.plan);
+  const chosen = sortState.items.filter(i => sortState.include.has(i.id)); const mv = chosen.filter(i => i.action === "move").length, ib = chosen.filter(i => i.action === "inbox").length;
+  $("#sortConsequence").textContent = sortState.plan ? `Moves only checked rows: ${mv} to drawers, ${ib} to the Inbox. Skipped rows never move.` : "Nothing moves until you apply.";
+  const inc = sortState.items.filter(i => i.action !== "skip").length; $("#sortIncluded").textContent = sortState.plan ? `${n} of ${inc} included` : "";
+}
+function renderSortSeg() {
+  const c = { all: sortState.items.length, move: 0, inbox: 0, skip: 0 }; sortState.items.forEach(i => c[i.action] = (c[i.action] || 0) + 1);
+  const seg = $("#sortSeg"); seg.classList.toggle("hidden", !sortState.plan);
+  seg.innerHTML = ["all", "move", "inbox", "skip"].map(k => `<button data-f="${k}" aria-pressed="${sortState.filter === k}">${k[0].toUpperCase() + k.slice(1)} ${c[k] || 0}</button>`).join("");
+}
+$("#sortSeg").onclick = (e) => { const b = e.target.closest("[data-f]"); if (!b) return; sortState.filter = b.dataset.f; sortTable.filter = sortState.filter === "all" ? null : (r => r.action === sortState.filter); sortTable.refresh(); renderSortSeg(); if (!sortTable.view.length) sortTable.empty("⇄", "Nothing in this filter", ""); };
+function sortEmpty() { sortTable.renderHead(); sortTable.empty("⇄", "See where every file would go — before anything moves.", "Pick a folder, then press <b>Scan &amp; Preview</b>. Nothing moves until you apply."); }
+$("#scanBtn").onclick = async () => {
+  const folder = $("#sortFolder").value.trim(); if (!folder) { status("Pick a folder first.", true); $("#sortFolder").focus(); return; }
+  const b = $("#scanBtn"); b.disabled = true; b.innerHTML = `<span class="spin"></span> Scanning…`;
+  try {
+    const d = await api("/api/sort/preview", { body: { folder, recursive: $("#sortRecursive").checked } });
+    Object.assign(sortState, { plan: d.plan, planName: d.plan_name, items: d.items, filter: "all" }); sortTable.filter = null;
+    sortState.include = new Set(d.items.filter(i => i.action !== "skip").map(i => i.id));
+    sortTable.setRows(d.items); renderSortSeg(); updateSortBar();
+    $("#sortCount").textContent = `Plan: ${d.items.length} file${d.items.length === 1 ? "" : "s"}`; $("#openPlan").classList.remove("hidden"); $("#openPlan").textContent = "📄 " + d.plan_name;
+    status(`Preview: ${d.items.length} files · move=${d.counts.move || 0} inbox=${d.counts.inbox || 0} skip=${d.counts.skip || 0} · ${d.plan_name}`);
+    if (!d.items.length) sortTable.empty("✓", "This folder has no files to sort", ""); else sortTable.select(0);
+  } catch (e) { status(e.message, true); }
+  finally { b.disabled = false; b.textContent = sortState.plan ? "↻ Re-scan" : "Scan & Preview"; }
+};
+$("#applyBtn").onclick = async () => {
+  const n = sortState.include.size; if (!n) return;
+  const ok = await modal(`Move ${n} selected file${n === 1 ? "" : "s"}?`, "Existing destinations will be skipped. Nothing is deleted. An undo log is written so you can put everything back.", [{ label: "Cancel", value: false }, { label: `Move ${n} file${n === 1 ? "" : "s"}`, value: true, cls: "primary" }]);
+  if (!ok) return;
+  const b = $("#applyBtn"); b.disabled = true; b.innerHTML = `<span class="spin"></span> Moving…`;
+  try {
+    const d = await api("/api/sort/apply", { body: { plan: sortState.plan, ids: [...sortState.include] } });
+    status(`Applied: moved=${d.moved} skipped=${d.skipped} errors=${d.errors}` + (d.undo ? " · undo log saved" : ""));
+    toast(`Moved ${d.moved} file${d.moved === 1 ? "" : "s"}` + (d.skipped ? `, ${d.skipped} skipped` : ""));
+    Object.assign(sortState, { plan: null, items: [] }); sortState.include.clear(); sortTable.setRows([]); renderSortSeg(); sortEmpty(); pvSort.clear();
+    $("#sortCount").textContent = "Applied — scan again to continue"; $("#openPlan").classList.add("hidden"); $("#scanBtn").textContent = "Scan & Preview";
+  } catch (e) { status(e.message, true); }
+  finally { updateSortBar(); }
+};
+$("#undoBtn").onclick = async () => {
+  const ok = await modal("Undo the last Sort apply?", "Files are moved back only when they are still at their new location and the original spot is free. Nothing is overwritten or deleted.", [{ label: "Cancel", value: false }, { label: "Undo last", value: true, cls: "primary" }]);
+  if (!ok) return;
+  try { const d = await api("/api/sort/undo", { body: {} }); status(`Undo: moved back=${d.moved} skipped=${d.skipped} errors=${d.errors}`); toast(`Moved back ${d.moved} file${d.moved === 1 ? "" : "s"}`); }
+  catch (e) { status(e.message, true); }
+};
+$("#openPlan").onclick = () => sortState.plan && api("/api/open", { body: { path: sortState.plan } }).catch(e => status(e.message, true));
+
+// ---------- EXPIRING
+const pvE = makePreview("pv-expiring");
+const eTable = new VTable($("#expWrap"), {
+  columns: [
+    expDriveCol,
+    { key: "person", label: "Person", width: 110, render: r => esc(r.person || "—") },
+    { key: "name", label: "Document", width: 330, render: r => `<span class="ficon">${ICON[r.type] || "□"}</span><span class="name">${esc(r.name)}</span>`, tip: r => r.name },
+    { key: "expiry", label: "Expiry", width: 104 },
+    { key: "days_left", label: "Days left", width: 160, render: r => r.days_left < 0 ? `<b style="color:var(--red)">⚠ ${r.days_left}</b> <span class="pill past">past due</span>` : `<b style="color:var(--amber)">◷ ${r.days_left} days</b> ${r.label ? `<span class="pill soon">soon</span>` : ""}` },
+    { key: "dir", label: "Path", width: 380, cls: "mono", tip: r => r.dir },
+  ],
+  defaultSort: ["days_left", false],
+  rowClass: r => r.days_left < 0 ? "past" : "soon",
+  onSelect: r => {
+    const past = r.days_left < 0;
+    renderFilePreview(pvE, r, `<div class="callout ${past ? "red" : "amber"}"><div class="ic">${past ? "!" : "◷"}</div><div><h4>${past ? `Expired ${esc(r.expiry)} · ${-r.days_left} days past due` : `Expires ${esc(r.expiry)} · in ${r.days_left} days`}</h4><p>From the filename tag EXP_${esc(r.expiry)}.</p></div></div>`);
+  },
+  onActivate: r => previewAction("open", r, pvE),
+});
+$("#expPresets").innerHTML = [30, 90, 180, 365].map(d => `<button data-d="${d}">${d}</button>`).join("");
+$("#expPresets").onclick = (e) => { const b = e.target.closest("[data-d]"); if (b) { $("#expDays").value = b.dataset.d; loadExpiring(); } };
+$("#expRefresh").onclick = () => loadExpiring();
+$("#expDays").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); loadExpiring(); } });
+async function loadExpiring(badgeOnly = false) {
+  const days = $("#expDays").value.trim();
+  if (days && !/^\d+$/.test(days)) { status("Days must be a number.", true); return; }
+  document.querySelectorAll("#expPresets button").forEach(b => b.setAttribute("aria-pressed", b.dataset.d === days));
+  try {
+    const d = await api("/api/expiring?" + qs({ days, source: state.source }));
+    const badge = $("#expBadge"); badge.textContent = d.past_due; badge.classList.toggle("hidden", !d.past_due); badge.title = `${d.past_due} past due`;
+    if (badgeOnly) return;
+    state.expLoaded = true; eTable.setRows(d.items);
+    $("#expCount").textContent = `${d.items.length} document${d.items.length === 1 ? "" : "s"}`;
+    $("#expPast").textContent = `⚠ ${d.past_due} past due`; $("#expPast").classList.toggle("hidden", !d.past_due);
+    $("#expSoon").textContent = `◷ ${d.soon} due within ${d.window ?? "any"} days`; $("#expSoon").classList.toggle("hidden", !d.soon);
+    const more = $("#expMore");
+    if (d.later) {
+      more.classList.remove("hidden");
+      more.innerHTML = `<span class="hint">◷ ${d.later} more document${d.later === 1 ? "" : "s"} after this window — next is ${esc(d.next_item)} in ${d.next_days} days.</span><button class="link" id="widen">Show ${d.next_window} days</button>`;
+      $("#widen").onclick = () => { $("#expDays").value = d.next_window; loadExpiring(); };
+    } else more.classList.add("hidden");
+    status(`Expiring: ${d.items.length} · past due=${d.past_due} · within ${d.window} days=${d.soon}   ${indexLine()}` + (d.warnings.length ? "   ⚠ " + d.warnings.join(" ") : ""));
+    if (d.items.length) eTable.select(0);
+    else { pvE.clear(); eTable.empty("✓", `Nothing past due or due within ${esc(days)} days`, "Name IDs like <kbd>Name_Passport_EXP_2030-05-12.pdf</kbd> to track them here."); }
+  } catch (e) { status(e.message, true); }
+}
+
+// ---------- BACKUP
+const pvB = makePreview("pv-backup");
+const bTable = new VTable($("#bkWrap"), {
+  columns: [
+    { key: "kind", label: "Plan", width: 110, render: r => `<span class="pill ${r.kind}">${r.kind === "copy" ? "⧉ Copy" : r.kind === "conflict" ? "⚠ Conflict" : "⊘ Error"}</span>` },
+    { key: "rel", label: "Relative path", width: 420, tip: r => r.source },
+    { key: "dest", label: "Planned destination", width: 440, cls: "mono", tip: r => r.dest },
+    { key: "reason", label: "Reason", width: 280 },
+  ],
+  defaultSort: ["kind", false],
+  onSelect: r => renderFilePreview(pvB, { name: r.rel.split(/[\\/]/).pop(), path: r.source, drive: "", online: true },
+    `<div class="callout ${r.kind === "conflict" ? "amber" : r.kind === "error" ? "red" : "blue"}"><div class="ic">${r.kind === "copy" ? "⧉" : "!"}</div><div><h4>${r.kind === "copy" ? "Will copy to" : r.kind === "conflict" ? "Conflict — saved instead to" : "Error"}</h4><p style="font-family:var(--mono);word-break:break-all">${esc(r.dest)}</p><p>${esc(r.reason)}</p></div></div>`),
+});
+function renderBackupTarget() {
+  const i = state.backupInfo || state.meta?.backup; if (!i) return;
+  $("#bkSrc").textContent = i.source || "—"; $("#bkDest").textContent = i.dest || "—";
+  const st = $("#bkState"); st.className = "pill " + (i.online ? "on" : "off"); st.textContent = i.online ? "● Online" : "○ Unplugged"; st.title = i.message || "";
+  $("#bkPreview").disabled = !i.available || !i.online || !!state.bkRunning;
+  $("#bkRun").disabled = !(state.bkDry && i.online && !state.bkRunning);
+  $("#bkRun").classList.toggle("primary", !!state.bkDry); $("#bkPreview").classList.toggle("primary", !state.bkDry);
+  if ((!i.online || !i.available) && !state.bkDry) $("#bkTitle").textContent = i.message || "Backup unavailable";
+}
+function showBackup(r) {
+  const c = r.counts;
+  $("#cCopy").textContent = c.copy.toLocaleString(); $("#cCopySub").textContent = `${humanSize(r.copy_bytes) || "0 B"} of new files`;
+  $("#cSkip").textContent = c.skip.toLocaleString(); $("#cConflict").textContent = c.conflict.toLocaleString(); $("#cError").textContent = c.error.toLocaleString();
+  $("#bkTitle").textContent = r.apply ? "Backup finished" : "Dry run finished";
+  $("#bkWhen").textContent = `${r.finished} · ${r.apply ? "files copied" : "nothing was copied yet"}${r.pre_reindex ? " · fresh indexes" : " · used current indexes"}`;
+  state.bkLog = r.log; $("#bkLog").classList.toggle("hidden", !r.log);
+  bTable.setRows(r.rows); $("#bkListTitle").textContent = `Preview list (${r.rows.length.toLocaleString()})`;
+  if (!r.rows.length) bTable.empty("✓", "Everything is already on the drive", "No new files and no conflicts.");
+  else bTable.select(0);
+}
+async function loadBackupLast() {
+  await checkDrives(true);
+  try { const d = await api("/api/backup/last"); if (d.dry_run && !state.bkDry) { state.bkDry = d.dry_run; showBackup(d.dry_run); } if (d.running && !state.bkRunning) watchBackup(d.running.id, d.running.kind === "backup-apply"); } catch {}
+  renderBackupTarget();
+}
+function watchBackup(id, apply) {
+  state.bkRunning = true; renderBackupTarget();
+  const btn = apply ? $("#bkRun") : $("#bkPreview"); const label = apply ? "⧉ Run backup" : "▷ Preview backup";
+  btn.innerHTML = `<span class="spin"></span> ${apply ? "Copying…" : "Checking…"}`;
+  pollJob(id, (j, err) => {
+    state.bkRunning = false; btn.innerHTML = label;
+    if (err || !j || j.state === "error") { status("Backup: " + (err?.message || j?.error || "failed"), true); renderBackupTarget(); return; }
+    const r = j.result; state.bkDry = r.apply ? null : r;
+    showBackup(r); renderBackupTarget();
+    status(`${r.apply ? "Backup" : "Dry run"}: ${r.apply ? "copied" : "would copy"}=${r.counts.copy} skipped=${r.counts.skip} conflicts=${r.counts.conflict} errors=${r.counts.error} · ${j.elapsed}s`, r.counts.error > 0);
+  }, t => status(`${apply ? "Backing up" : "Dry run"}… ${Math.round(t.elapsed)}s${t.progress ? ` · ${t.progress.toLocaleString()} files checked` : " (re-indexing and hashing can take a while)"}`));
+}
+$("#bkPreview").onclick = async () => {
+  try { const j = await api("/api/backup/run", { body: { apply: false, pre_reindex: $("#bkPre").checked } }); watchBackup(j.id, false); }
+  catch (e) { status(e.message, true); }
+};
+$("#bkRun").onclick = async () => {
+  const r = state.bkDry; if (!r) return; const n = r.counts.copy + r.counts.conflict;
+  const opts = await modal(`Copy ${n} file${n === 1 ? "" : "s"} to the external drive?`,
+    `<b>${r.counts.copy}</b> new file(s) will be copied${r.counts.conflict ? `, and <b>${r.counts.conflict}</b> conflict(s) go to <code>To Review\\Sync Conflicts\\</code>` : ""}. Nothing on the drive is deleted or overwritten.<br><br>
+     <label class="field" style="color:var(--text)"><input type="checkbox" id="mPre" checked> Re-index both drives first (recommended — copies from fresh indexes)</label>
+     <label class="field" style="color:var(--text);margin-top:6px"><input type="checkbox" id="mPost" checked> Refresh the external drive's index after copying</label>`,
+    [{ label: "Cancel", value: null }, { label: "Run backup", cls: "primary", value: () => ({ pre: $("#mPre").checked, post: $("#mPost").checked }) }]);
+  if (!opts) return;
+  try { const j = await api("/api/backup/run", { body: { apply: true, pre_reindex: opts.pre, reindex: opts.post } }); watchBackup(j.id, true); }
+  catch (e) { status(e.message, true); }
+};
+$("#bkLog").onclick = () => state.bkLog && api("/api/open", { body: { path: state.bkLog } }).catch(e => status(e.message, true));
+
+// ---------- keys
+document.addEventListener("keydown", (e) => {
+  const open = $("#modal").classList.contains("open");
+  if (e.key === "Escape" && open) { modal.close(); return; }
+  if (open) return;
+  const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "");
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") { e.preventDefault(); showTab("search"); $("#q").focus(); $("#q").select(); return; }
+  if (e.key === "/" && !typing) { e.preventDefault(); showTab("search"); $("#q").focus(); return; }
+  if ((e.ctrlKey || e.metaKey) && /^[1-4]$/.test(e.key)) { e.preventDefault(); showTab(["search", "sort", "expiring", "backup"][+e.key - 1]); return; }
+  if (e.key === "Enter" && !typing) {
+    if (state.tab === "sort") (sortState.plan ? $("#applyBtn") : $("#scanBtn")).click();
+    else if (state.tab === "expiring") loadExpiring();
+  }
+});
+$("#sortFolder").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); $("#scanBtn").click(); } });
+
+// ---------- boot
+(async function boot() {
+  state.source = localStorage.getItem("sonar.source") || "all";
+  try {
+    const m = await api("/api/meta"); state.meta = m; state.backupInfo = m.backup;
+    for (const f of m.folders) $("#fFolder").insertAdjacentHTML("beforeend", `<option>${esc(f)}</option>`);
+    for (const p of m.people) $("#fPerson").insertAdjacentHTML("beforeend", `<option>${esc(p)}</option>`);
+    for (const t of m.types) $("#fType").insertAdjacentHTML("beforeend", `<option>${esc(t)}</option>`);
+    $("#ebooksBtn").classList.toggle("hidden", !m.show_ebooks);
+    $("#sortPresets").innerHTML = m.presets.map(p => `<button class="btn sm" data-p="${esc(p.path)}" title="${esc(p.path)}">${esc(p.label)}</button>`).join("");
+    $("#sortPresets").onclick = (e) => { const b = e.target.closest("[data-p]"); if (b) { $("#sortFolder").value = b.dataset.p; $("#sortFolder").focus(); } };
+  } catch (e) { status("Could not load settings: " + e.message, true); }
+  await checkDrives(true); applyDriveColumn(); renderBackupTarget(); sortEmpty(); updateSortBar(); updateFilterHint(); idleSearch();
+  status("Ready.   " + indexLine());
+  loadExpiring(true); $("#q").focus();
+})();
+</script>
+</body>
+</html>

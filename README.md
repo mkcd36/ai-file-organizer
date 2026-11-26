@@ -497,6 +497,7 @@ This organizes files *already on* the external drive. To copy new cabinet files 
   - **Sort a folder tab:** pick a folder, preview where each file would go, tick and apply, and undo the last sort if needed.
   - **Expiring tab:** every ID with an `EXP_` date (the older `Exp-YYYY-MM-DD` form is still read), soonest first.
 - **`ssort` (terminal):** the same sort engine as the app tab. Preview → apply → undo.
+- **Sonar web UI (modern, optional):** the same Search, Sort a folder, Expiring and Backup features in a clean light/dark browser UI. Standard-library Python only, nothing to install. Run `python scripts\sonar_web.py` (or double-click `scripts\sonar_web.pyw`) and it opens `http://127.0.0.1:8765/` in your browser. Flags: `--port 8799`, `--no-browser`. It listens on `127.0.0.1` only, and every action that opens, moves or copies files needs a per-launch token, so other sites and other machines cannot trigger anything. Sort never overwrites and writes an undo log. Backup always runs a dry run first and sends conflicts to `To Review\Sync Conflicts\`. The **eBooks library** button only appears when your index has eBooks; set `"show_ebooks_shortcut": true` or `false` in `config.json` to override that. The Tk app (`sonar_app.pyw`) still works as before.
 
 
 | Task | Command |
@@ -512,6 +513,7 @@ This organizes files *already on* the external drive. To copy new cabinet files 
 | Audit a drawer | `.\scripts\check.ps1 -Folder "40 Money"` |
 | OCR new scans | `python scripts\sonar_ocr.py plan --folder "00 Inbox"`, then `apply --folder "00 Inbox" --yes`, then `sonar --reindex` |
 | Open the app | Desktop shortcut **Sonar** |
+| Open the modern web UI | `python scripts\sonar_web.py` (opens your browser at `127.0.0.1`) |
 | Back up new cabinet files to an external drive | `python scripts\sonar_backup.py` (dry-run), then `--apply`. See [section 12](#12-automating-backups-to-an-external-drive) |
 
 **In the app:** type and press Enter. The arrow keys move through results and the preview updates. Double-click opens a file. Right-click gives Open folder or Copy path. **Sort a folder** previews a plan with checkboxes, and **Apply** and **Undo last** are one click each. **Expiring** shows IDs that are due soon.
