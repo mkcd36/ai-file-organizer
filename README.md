@@ -533,7 +533,8 @@ This organizes files *already on* the external drive. To copy new cabinet files 
 `scripts\sonar_backup.py` copies **new** cabinet files to an external drive. It is additive: it never deletes anything on the destination, and it never overwrites a file that is already there.
 
 - **Dry-run by default.** It only plans and writes a CSV log under `plans\`. Pass `--apply` to copy.
-- **Hash dedupe.** Each source file is hashed with SHA-256 and checked against the destination index (default: `<drive>\_index\index.db`). If that exact hash already exists *anywhere* on the destination, the file is skipped.
+- **Pre-backup re-index (default).** Step 1 incrementally re-indexes both the local cabinet and the external drive *before* hashes are read or files are planned, so a stale index cannot cause false copies or missed deduplication. If the external drive is not connected, the script exits before attempting to index it. After a successful destination re-index, an optional `backup.offline_index` (a local copy of the destination index, used when the drive is unplugged) is refreshed if configured.
+- **Hash dedupe.** Each source file is hashed with SHA-256 and checked against the destination index (default: `<external>\_index\index.db`, or `backup.index_db`). If that exact hash already exists *anywhere* on the destination, the file is skipped.
 - **Same-path conflicts.** If the destination already has a file at the same relative path with a *different* hash, the incoming file is copied to `To Review\Sync Conflicts\` (or `backup.conflicts_root`) instead of overwriting. If that conflict path is already taken, a `-2`, `-3`, … suffix is added. Nothing already on the drive is changed.
 - **Skipped names.** `_index` folders, `.lnk` shortcuts, and `desktop.ini` are not copied.
 
@@ -541,24 +542,33 @@ This organizes files *already on* the external drive. To copy new cabinet files 
 
 ```json
 "backup": {
-  "dest_root": "E:\\Family",
-  "index_db": "E:\\_index\\index.db",
-  "conflicts_root": "E:\\To Review\\Sync Conflicts"
+  "dest_root": "<external>\\Family",
+  "index_db": "<external>\\_index\\index.db",
+  "conflicts_root": "<external>\\To Review\\Sync Conflicts",
+  "offline_index": "%USERPROFILE%\\Documents\\Family\\_index\\external.db"
 }
 ```
 
-Or pass the paths on the command line. The source defaults to `cabinet_root`.
+`offline_index` is optional. The source defaults to `cabinet_root`. You can also pass the paths on the command line.
 
 ```
 python scripts\sonar_backup.py
+python scripts\sonar_backup.py --skip-pre-reindex
+python scripts\sonar_backup.py --skip-local-reindex
+python scripts\sonar_backup.py --skip-external-reindex
 python scripts\sonar_backup.py --apply
 python scripts\sonar_backup.py --apply --reindex
-python scripts\sonar_backup.py --dest "E:\Family" --index "E:\_index\index.db"
+python scripts\sonar_backup.py --dest "<external>\Family" --index "<external>\_index\index.db"
 ```
 
-`--reindex` refreshes the destination index after a successful apply so later runs see the files just copied. The CSV log records every `WOULD_COPY`, `COPY`, `SKIP`, `CONFLICT`, or `ERROR` with source, destination, and hash.
+- `--skip-pre-reindex` skips the pre-backup re-index of both the Local Drive and the External Drive (useful for a fast dry-run when you know both indexes are already fresh).
+- `--skip-local-reindex` skips only the Local Drive pre-reindex.
+- `--skip-external-reindex` skips only the External Drive pre-reindex.
+- `--reindex` refreshes the destination index *after* a successful apply so later runs see the files just copied, and updates `backup.offline_index` if set.
 
-Build the destination index once before the first backup (`python scripts\sonar_index.py --db "E:\_index\index.db" index --root "E:\Family"`), and plug the drive in first.
+The CSV log records every `WOULD_COPY`, `COPY`, `SKIP`, `CONFLICT`, or `ERROR` with source, destination, and hash.
+
+If the destination index does not exist yet, the pre-backup re-index will create it. You can also build it once yourself with `python scripts\sonar_index.py --db "<external>\_index\index.db" index --root "<external>\Family"`. Plug the drive in first.
 
 ---
 

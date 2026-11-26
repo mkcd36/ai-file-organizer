@@ -8,8 +8,19 @@ goes to the conflicts folder instead of overwriting. Nothing on the
 destination is deleted.
 
 Paths come from config.json (cabinet_root as the source; optional
-backup.dest_root, backup.index_db, backup.conflicts_root) or from
---source / --dest / --index / --conflicts.
+backup.dest_root, backup.index_db, backup.conflicts_root,
+backup.offline_index) or from --source / --dest / --index / --conflicts.
+
+By default, step 1 incrementally re-indexes both the local cabinet and the
+external drive before hashes are read or files are planned, so stale
+indexes cannot cause false copies or missed deduplication. If the
+external drive is not connected, the script exits before attempting to
+index it. After a successful destination re-index, backup.offline_index
+(a local copy of the destination index, used when the drive is unplugged)
+is refreshed when configured. Use --skip-pre-reindex to skip both drives,
+or --skip-local-reindex / --skip-external-reindex to skip one. --reindex
+still refreshes the destination index after a successful apply so it
+includes newly copied files (and updates the offline copy when configured).
 """
 
 from __future__ import annotations
@@ -143,12 +154,12 @@ def default_log_path() -> Path:
     return folder / f"backup-{stamp}.csv"
 
 
-def run_reindex(dest_root: Path, index_db: Path, config: Path | None) -> tuple[int, str]:
+def run_reindex(root: Path, index_db: Path, config: Path | None) -> tuple[int, str]:
     script = _SCRIPTS / "sonar_index.py"
     cmd = [python_exe(), str(script)]
     if config:
         cmd.extend(["--config", str(config)])
-    cmd.extend(["--db", str(index_db), "index", "--root", str(dest_root)])
+    cmd.extend(["--db", str(index_db), "index", "--root", str(root)])
     proc = subprocess.run(
         cmd,
         capture_output=True,
@@ -158,6 +169,80 @@ def run_reindex(dest_root: Path, index_db: Path, config: Path | None) -> tuple[i
     )
     output = ((proc.stdout or "") + (proc.stderr or "")).rstrip()
     return proc.returncode, output
+
+
+def copy_index_db(src: Path, dest: Path) -> None:
+    """Copy an index with the SQLite backup API so WAL companions stay consistent."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    src_conn = sqlite3.connect(str(src))
+    try:
+        dest_conn = sqlite3.connect(str(dest))
+        try:
+            src_conn.backup(dest_conn)
+        finally:
+            dest_conn.close()
+    finally:
+        src_conn.close()
+
+
+def sync_offline_index(index_db: Path, offline: Path | None) -> None:
+    if offline is None or not index_db.is_file():
+        return
+    if not offline.parent.is_dir():
+        offline.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if offline.resolve() == index_db.resolve():
+            return
+    except OSError:
+        if offline == index_db:
+            return
+    copy_index_db(index_db, offline)
+    print(f"  Synced offline index copy: {offline}")
+
+
+def pre_reindex(
+    *,
+    source: Path,
+    dest_root: Path,
+    local_index: Path,
+    index_db: Path,
+    offline: Path | None,
+    used_config: Path | None,
+    do_local: bool,
+    do_external: bool,
+) -> int:
+    if do_local and do_external:
+        print("[1/3] Re-indexing local + external drives…")
+    elif do_local:
+        print("[1/3] Re-indexing local drive…")
+    elif do_external:
+        print("[1/3] Re-indexing external drive…")
+    else:
+        print("[1/3] Pre-reindex skipped.")
+        return 0
+
+    if do_local:
+        print(f"  Local Drive: {source} -> {local_index}")
+        code, output = run_reindex(source, local_index, used_config)
+        if output:
+            print(output)
+        if code != 0:
+            print(f"Pre-backup local re-index failed with exit code {code}", file=sys.stderr)
+            return code
+
+    if do_external:
+        print(f"  External Drive: {dest_root} -> {index_db}")
+        code, output = run_reindex(dest_root, index_db, used_config)
+        if output:
+            print(output)
+        if code != 0:
+            print(f"Pre-backup external re-index failed with exit code {code}", file=sys.stderr)
+            return code
+        try:
+            sync_offline_index(index_db, offline)
+        except (OSError, sqlite3.Error) as exc:
+            print(f"  Warning: could not sync offline index copy ({offline}): {exc}", file=sys.stderr)
+    return 0
 
 
 def write_row(writer, action: str, src, dest, digest: str, reason: str) -> None:
@@ -195,8 +280,8 @@ def classify(src: Path, dest: Path, digest: str, known: set[str], conflicts_root
     return "copy", dest, "new file"
 
 
-def resolve_paths(args) -> tuple[Path, Path, Path, Path, Path | None]:
-    """Source, dest, index, conflicts, and the config file used (if any)."""
+def resolve_paths(args) -> tuple[Path, Path, Path, Path, Path | None, Path, Path | None]:
+    """Source, dest, dest index, conflicts, config used, local index, offline index copy."""
     cfg_path = Path(args.config) if args.config else settings_path(None)
     settings: dict = {}
     used_config: Path | None = None
@@ -251,18 +336,53 @@ def resolve_paths(args) -> tuple[Path, Path, Path, Path, Path | None]:
     else:
         conflicts = Path(conflicts)
 
-    return source, dest, index_db, conflicts, used_config
+    local_index = Path(settings["index_db"]) if settings.get("index_db") else source / "_index" / "index.db"
+
+    offline: Path | None = None
+    raw_offline = backup.get("offline_index")
+    if raw_offline:
+        candidate = expand_path(raw_offline)
+        same = False
+        try:
+            same = candidate.resolve() == index_db.resolve()
+        except OSError:
+            same = candidate == index_db
+        if not same:
+            offline = candidate
+
+    return source, dest, index_db, conflicts, used_config, local_index, offline
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Copy new cabinet files to an external drive without overwriting or deleting (dry-run default)."
+        description=(
+            "Copy new cabinet files to an external drive without overwriting or deleting (dry-run default). "
+            "By default, re-indexes the local cabinet and the external drive before comparing."
+        )
     )
     parser.add_argument("--apply", action="store_true", help="copy files; without this flag, only plan")
     parser.add_argument(
         "--reindex",
         action="store_true",
-        help="refresh the destination index after a successful apply",
+        help=(
+            "after a successful apply, refresh the destination index so it includes newly copied files "
+            "(and update backup.offline_index if configured)"
+        ),
+    )
+    parser.add_argument(
+        "--skip-pre-reindex",
+        action="store_true",
+        help="skip the pre-backup re-index of both the local cabinet and the external drive (faster dry-runs when both indexes are already fresh)",
+    )
+    parser.add_argument(
+        "--skip-local-reindex",
+        action="store_true",
+        help="skip the pre-backup re-index of the local cabinet only",
+    )
+    parser.add_argument(
+        "--skip-external-reindex",
+        action="store_true",
+        help="skip the pre-backup re-index of the external drive only",
     )
     parser.add_argument("--config", type=Path, default=None, help="config.json (default: SONAR_CONFIG or project config.json)")
     parser.add_argument("--log", type=Path, default=None, help="CSV log path (default: plans\\backup-<timestamp>.csv)")
@@ -275,9 +395,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    source, dest_root, index_db, conflicts_root, used_config = resolve_paths(args)
+    source, dest_root, index_db, conflicts_root, used_config, local_index, offline = resolve_paths(args)
     apply = bool(args.apply)
     log_path = args.log or default_log_path()
+    do_local = not (args.skip_pre_reindex or args.skip_local_reindex)
+    do_external = not (args.skip_pre_reindex or args.skip_external_reindex)
 
     if not source.is_dir():
         print(f"Source cabinet not found: {source}", file=sys.stderr)
@@ -286,6 +408,19 @@ def main(argv: list[str] | None = None) -> int:
         drive = dest_root.drive or dest_root
         print(f"Destination drive {drive} is not connected. Plug it in and try again.", file=sys.stderr)
         return 1
+
+    pre_code = pre_reindex(
+        source=source,
+        dest_root=dest_root,
+        local_index=local_index,
+        index_db=index_db,
+        offline=offline,
+        used_config=used_config,
+        do_local=do_local,
+        do_external=do_external,
+    )
+    if pre_code != 0:
+        return pre_code
 
     try:
         known = load_known_hashes(index_db)
@@ -298,6 +433,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"      dest={dest_root}")
     print(f"      index={index_db}  known_hashes={len(known):,}")
     print(f"      log={log_path}")
+
+    print("[2/3] Scanning & comparing…")
+    if apply:
+        print("[3/3] Applying backup…")
 
     counts = {"copy": 0, "skip": 0, "conflict": 0, "error": 0, "scanned": 0}
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -354,7 +493,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"log: {log_path}")
     if not apply:
-        print("Dry-run only. Re-run with --apply to copy.")
+        print("Dry-run complete. Re-run with --apply to copy.")
 
     if args.reindex:
         if not apply:
@@ -369,6 +508,10 @@ def main(argv: list[str] | None = None) -> int:
             if code != 0:
                 print(f"Reindex failed with exit code {code}", file=sys.stderr)
                 return code
+            try:
+                sync_offline_index(index_db, offline)
+            except (OSError, sqlite3.Error) as exc:
+                print(f"  Warning: could not sync offline index copy ({offline}): {exc}", file=sys.stderr)
     return 1 if counts["error"] else 0
 
 
