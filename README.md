@@ -4,21 +4,51 @@ A complete, shareable recipe for turning a messy Windows PC (Desktop, Downloads,
 
 > All names, companies, and paths in this kit are placeholders. Replace `<You>`, `<Spouse>`, `<Kid1>`, `<Kid2>`, `<Parents>`, `<Employer>`, `<Bank>`, `<Brokerage>` with your own.
 
+## How it works
+
+The kit is a five-stage pipeline. Every stage runs locally on your PC. Nothing is ever permanently deleted, and a file is never overwritten.
+
+```mermaid
+flowchart TD
+  scan["1. Scan (read-only)"]
+  plan["2. Plan and Approve"]
+  move["3. Move with Undo Log and Rename"]
+  ocr["4. OCR + FTS5 Index"]
+  sonar["5. Sonar Search"]
+  review["To Review / For Deletion<br/>You empty it yourself"]
+
+  scan --> plan --> move --> ocr --> sonar
+  move -.-> review
+```
+
+1. **Scan (read-only).** The agent inventories Desktop, Downloads, Documents, and any backups or external drives you point it at. It reads names, types, hashes, and page 1 of documents. It does not move anything yet.
+2. **Plan and approve.** Every proposed move or rename is written to a plan (a manifest CSV) and shown to you with counts, samples, and a recommendation. You approve before anything is applied. Unattended bulk runs (old backups or an external drive) still write a plan and an undo log.
+3. **Move with an undo log, and rename.** Approved plans are applied in PowerShell, without `-Force`. On a collision the file is skipped and reported. Exact SHA-256 duplicates and junk go to `To Review\For Deletion` — you empty that folder yourself. Every applied move is recorded in an undo log so it can be reversed.
+4. **OCR and FTS5 index.** Scanned PDFs get a searchable text layer (the untouched original is kept in `To Review\OCR Originals`). Then a local SQLite FTS5 index is built from file names, paths, and the text inside PDFs, Word, Excel, PowerPoint, and text files. Nothing is uploaded.
+5. **Sonar search.** Search the cabinet from a small desktop app (`scripts\sonar_app.pyw`) or the terminal (`python scripts\sonar.py "<words>"`). Sonar can also sort a folder with preview, apply, and undo, and flag IDs that are about to expire.
+
+**Getting started.** [GETTING_STARTED.md](GETTING_STARTED.md) is the short walkthrough for both paths:
+
+- **You cloned this repo.** Follow that file (or the quick start below) and open the folder in Cursor, Claude Code, Codex, or a similar agent so `AGENTS.md` / `CLAUDE.md` are picked up automatically. The scripts in `scripts\` are already here.
+- **You don't want to clone anything.** Download just [GETTING_STARTED.md](GETTING_STARTED.md), upload or paste it into ChatGPT, Claude, Gemini, Cursor, or any other LLM, and follow the starter prompt inside it.
+
 ## Quick start with this repo
 
-This repo already contains the finished scripts (`scripts\`) and agent rules (`AGENTS.md`, `CLAUDE.md`, `.cursor\rules\agents.mdc`), so you can skip most of Prompt A.
+This repo already contains the finished scripts (`scripts\`) and agent rules (`AGENTS.md`, `CLAUDE.md`, `.cursor\rules\agents.mdc`), so you can skip most of Prompt A. For a fuller walkthrough, including a copy-paste prompt you can use without cloning, see [GETTING_STARTED.md](GETTING_STARTED.md).
 
 1. Install the prerequisites in [section 6](#6-prerequisites-and-install-windows), then run `python -m pip install -r requirements.txt`.
-2. Clone or copy the repo to a project folder, e.g. `%USERPROFILE%\Documents\Projects\personal-organization`.
+2. Clone or copy the repo to a project folder, e.g. `%USERPROFILE%\Documents\Projects\file-organizer-kit`.
 3. Copy `config.example.json` to `config.json` and edit it: your cabinet root, your people tokens (`You`, `Spouse`, `Kid1` …) and their nicknames, and the `75 <You>` folder name. `config.json` is git-ignored, so your details never get committed.
 4. Open the folder in your agent (Cursor, Codex, Claude Code, Grok …). It reads `AGENTS.md` automatically. Ask it to "run Prompt A, but the scripts already exist: create the cabinet folders, the plans files and the shortcuts, then run the tests in Part 4."
 5. Build the index once with `python scripts\sonar_index.py index`, then search with `python scripts\sonar.py "<words>"` or open `scripts\sonar_app.pyw`.
 
 Everything the scripts write (index, plans, undo logs) is git-ignored. Never commit `config.json`, `_index\` or `plans\`.
 
----
-
 ## Contents
+
+- [How it works](#how-it-works)
+- [Quick start with this repo](#quick-start-with-this-repo)
+- [GETTING_STARTED.md](GETTING_STARTED.md) — walkthrough and paste-into-any-LLM prompt
 
 1. [What this is](#1-what-this-is)
 2. [Principles](#2-principles)
@@ -326,7 +356,9 @@ python -c "import sqlite3; c=sqlite3.connect(':memory:'); c.execute('create virt
 The project folder holds the scripts, rules and logs. It is **not** the cabinet itself.
 
 ```
-%USERPROFILE%\Documents\Projects\personal-organization
+%USERPROFILE%\Documents\Projects\file-organizer-kit
+├── GETTING_STARTED.md         walkthrough + paste-into-any-LLM prompt
+├── README.md                  full guide
 ├── config.example.json        settings template: copy to config.json (git-ignored) and edit
 ├── requirements.txt           Python packages
 ├── AGENTS.md / CLAUDE.md / .cursor\rules\*.mdc   ← agent rules (use whichever your tool reads)
@@ -415,7 +447,7 @@ kind:code
 
 ## 8. Prompt A: master build prompt
 
-Paste this into your agent once, from an empty folder at `%USERPROFILE%\Documents\Projects\personal-organization`. Fill in the **MY HOUSEHOLD** block first. The prompt builds the whole system: rules, scripts, app and shortcuts. It does **not** move any of your files yet.
+Paste this into your agent once, from an empty folder at `%USERPROFILE%\Documents\Projects\file-organizer-kit`. Fill in the **MY HOUSEHOLD** block first. The prompt builds the whole system: rules, scripts, app and shortcuts. It does **not** move any of your files yet.
 
 ````text
 You are building a local, privacy-preserving personal file-organization system on my Windows PC.
