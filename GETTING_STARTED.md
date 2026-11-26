@@ -194,7 +194,7 @@ Copy everything in the block below, fill in the household lines, and paste it wi
 ````text
 You are setting up a local, privacy-preserving personal file-organization system on my Windows PC. Read the GETTING_STARTED.md file I provided (and README.md / AGENTS.md if they are in the current folder) and follow them. Use PowerShell and Python only. No cloud uploads.
 
-If this folder is the file-organizer-kit repo (scripts\, AGENTS.md, config.example.json exist), use the existing scripts. Do not rewrite them. If I only gave you GETTING_STARTED.md, help me clone the repo or, if I ask you to build from this file alone, build the tools it describes. In either case: do NOT move, rename, or OCR any of my real files until setup is done and I approve a plan.
+If this folder is the ai-file-organizer repo (scripts\, AGENTS.md, config.example.json exist), use the existing scripts. Do not rewrite them. If I only gave you GETTING_STARTED.md, help me clone the repo or, if I ask you to build from this file alone, build the tools it describes. In either case: do NOT move, rename, or OCR any of my real files until setup is done and I approve a plan.
 
 MY HOUSEHOLD (edit before running):
 - Cabinet root: %USERPROFILE%\Documents\Family
