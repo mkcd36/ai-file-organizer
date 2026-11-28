@@ -71,7 +71,7 @@ Use the README section 3 template. Documents that never change get one folder (`
 - A file that's open in a viewer can't be moved. Log it as locked and move on. Never use a header-only undo log from a failed apply.
 - Save `.ps1` files that contain non-ASCII characters as UTF-8 with BOM (Windows PowerShell 5.1).
 - Add audit exceptions (`plans\check-exceptions.txt`) only for standing exclusions the human approved, never to hide unfinished work.
-- OCR: skip `65 Learning` and `80 Photos` (and `60 Work` unless asked). Keep untouched originals in `To Review\OCR Originals`. Re-index after OCR.
+- OCR: page 1 of a typed scan is read with OCRia Nano and stored on the index row. The PDF is not modified. Skip `65 Learning`, `80 Photos`, and `60 Work` unless asked. Also skip Job search, program files, driver's licenses, x-ray pages, and secret-looking names.
 - Work through files on disk (STATUS, ISSUES, session logs) so another agent can pick up where you left off.
 
 ## 6. Tools in this repo
@@ -79,6 +79,6 @@ Use the README section 3 template. Documents that never change get one folder (`
 - `scripts\sonar.py` (`sonar`): search. `scripts\sonar_app.pyw`: the Sonar desktop app.
 - `scripts\sonar_sort.py` (`ssort`): sort a folder with preview, apply and undo.
 - `scripts\sonar_index.py`: index, search and audit. `scripts\check.ps1`: audit one folder.
-- `scripts\sonar_ocr.py`: OCR plan/apply (`--yes` is required to apply).
+- `scripts\sonar_ocr.py`: page-1 OCRia Nano plan/apply (`--yes` is required to apply). Writes text into the index and does not modify the PDF.
 - `scripts\organize.ps1`, `apply-manifest.ps1`, `undo-manifest.ps1`: dry-run-first movers with undo logs.
 - All of them read `config.json`. Test changes against a temp cabinet under `%TEMP%` (`--config`, `--dest-root`, `--db`), never against the real cabinet.

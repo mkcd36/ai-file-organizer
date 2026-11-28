@@ -29,7 +29,7 @@ flowchart TD
 1. **Scan (read-only).** The agent inventories Desktop, Downloads, Documents, and any backups or external drives you point it at. It reads names, types, hashes, and page 1 of documents. It does not move anything yet.
 2. **Plan and approve.** Every proposed move or rename is written to a plan (a manifest CSV) and shown to you with counts, samples, and a recommendation. You approve before anything is applied. Unattended bulk runs still write a plan and an undo log.
 3. **Move with an undo log, and rename.** Approved plans are applied in PowerShell, without `-Force`. On a collision the file is skipped and reported. Exact SHA-256 duplicates and junk go to `To Review\For Deletion` — you empty that folder yourself. Every applied move is recorded in an undo log so it can be reversed.
-4. **OCR and FTS5 index.** Scanned PDFs get a searchable text layer (the untouched original is kept in `To Review\OCR Originals`). Then a local SQLite FTS5 index is built from file names, paths, and the text inside your documents. Nothing is uploaded.
+4. **OCR and FTS5 index.** A scan whose first page has no text layer is read locally with OCRia Nano. That text is stored in the index. The PDF is left unchanged. Nothing is uploaded.
 5. **Sonar search.** Search the cabinet from the Sonar desktop app or the terminal. Sonar can also sort a folder with preview, apply, and undo, and flag IDs that are about to expire.
 
 ---
@@ -113,8 +113,7 @@ The top-level drawers are fixed. The subfolders shown are generic starting examp
 └── _index
 
 %USERPROFILE%\Documents\To Review
-├── For Deletion
-└── OCR Originals
+└── For Deletion
 ```
 
 **Stable vs. recurring.** Documents that never change get one folder; documents that repeat get a folder per year. IDs, passports, birth certificates, a property deed, or a will live in a single folder (`10 Identity\Passports`). Taxes, statements, receipts, trips, and payslips come every year, so they're grouped by year (`40 Money\Taxes\2025_Tax`, `15 Travel\2025`, `60 Work\Employers\<Employer>\Payslips\2025`). When in doubt, ask: will I get a new one of these next year? If yes, organize by year; if no, keep it in one folder.
@@ -150,17 +149,22 @@ Dates are `YYYY-MM-DD` (or `YYYY-MM` / `YYYY` when that's all the document gives
 
 Do this on your Windows PC, in PowerShell.
 
-1. **Install prerequisites** (Python 3.11+, Tesseract, Ghostscript; Git is optional):
+1. **Install prerequisites** (Python 3.11+; Git is optional):
 
    ```powershell
    winget install -e --id Python.Python.3.12
-   winget install -e --id UB-Mannheim.TesseractOCR
-   winget install -e --id ArtifexSoftware.GhostScript
    python -m pip install --upgrade pip
    python -m pip install -r requirements.txt
+   lit models pull ocria-nano
    ```
 
-   If an installer didn't add Tesseract or Ghostscript to PATH, add them and reopen the terminal. Typical folders: `C:\Program Files\Tesseract-OCR` and `C:\Program Files\gs\gs<version>\bin`.
+   If PowerShell cannot find `lit`, call the copy in the Python Scripts folder:
+
+   ```powershell
+   & "$([System.IO.Path]::GetDirectoryName((Get-Command python).Source))\Scripts\lit.exe" models pull ocria-nano
+   ```
+
+   The model stays on this PC. Household files are never uploaded.
 
 2. **Copy `config.example.json` to `config.json`** and edit it: cabinet root, review root, people tokens (`You`, `Spouse`, `Kid1`, `Kid2`, `Parents`) and nicknames, the `75 <You>` folder name, and your IANA time zone. `config.json` is git-ignored, so your details never get committed.
 
@@ -211,7 +215,7 @@ MY HOUSEHOLD (edit before running):
 
 Do this, in order:
 1. Confirm the safety rules: never delete (move to To Review\For Deletion instead); never overwrite; dry-run then apply; write an undo log for every apply; skip .lnk / desktop.ini / system files; hash before calling anything a duplicate.
-2. Install or verify prerequisites (Python 3.11+, Tesseract, Ghostscript, the Python packages) if I am on the repo path.
+2. Install or verify prerequisites (Python 3.11+, LiteParse, the OCRia Nano model, the Python packages) if I am on the repo path.
 3. Create config.json from config.example.json using the household block above. Never commit config.json.
 4. Create the empty cabinet drawers and the To Review folders, the plans files (STATUS.md, ISSUES.csv, check-exceptions.txt), and a Sonar desktop shortcut if the scripts exist.
 5. Report what you created and what I should do next. Stop before touching my Desktop, Downloads, Documents, or any other real files.
@@ -247,5 +251,5 @@ To copy new cabinet files to an external drive without overwriting or deleting a
 
 - A move failed because a file was open: close it and rerun. The agent should have skipped it and logged it.
 - You want to undo a batch: `.\scripts\undo-manifest.ps1 -Log plans\undo-log-<stamp>.csv` first as a dry run, then `-Apply`.
-- Search can't find words inside a scan: run the OCR plan/apply, then `sonar --reindex`.
+- Search can't find words inside a scan: run `python scripts\sonar_ocr.py plan` for that folder, then `apply --yes`. The text lands on the index row. The PDF is not changed.
 - The full troubleshooting table is in [README.md](README.md) (section 13). If you only have this file, ask your LLM to walk through the safety rules above and the undo log before trying anything else.

@@ -24,7 +24,7 @@ flowchart TD
 1. **Scan (read-only).** The agent inventories Desktop, Downloads, Documents, and any backups or external drives you point it at. It reads names, types, hashes, and page 1 of documents. It does not move anything yet.
 2. **Plan and approve.** Every proposed move or rename is written to a plan (a manifest CSV) and shown to you with counts, samples, and a recommendation. You approve before anything is applied. Unattended bulk runs (old backups or an external drive) still write a plan and an undo log.
 3. **Move with an undo log, and rename.** Approved plans are applied in PowerShell, without `-Force`. On a collision the file is skipped and reported. Exact SHA-256 duplicates and junk go to `To Review\For Deletion` — you empty that folder yourself. Every applied move is recorded in an undo log so it can be reversed.
-4. **OCR and FTS5 index.** Scanned PDFs get a searchable text layer (the untouched original is kept in `To Review\OCR Originals`). Then a local SQLite FTS5 index is built from file names, paths, and the text inside PDFs, Word, Excel, PowerPoint, and text files. Nothing is uploaded.
+4. **OCR and FTS5 index.** A scan whose first page has no text layer is read locally with OCRia Nano (LiteParse), one page only. That text is stored on the index row. The PDF is left unchanged. Digital PDFs, Word, Excel, PowerPoint, and text files are indexed from the text they already contain. Nothing is uploaded.
 5. **Sonar search.** Search the cabinet from a small desktop app (`scripts\sonar_app.pyw`) or the terminal (`python scripts\sonar.py "<words>"`). Sonar can also sort a folder with preview, apply, and undo, and flag IDs that are about to expire. If you keep a second index for an external drive, add it to `extra_indexes` in `config.json`: the Source dropdown (All drives, plus each labeled index) and `--source all|local|external` search one or every index, including an offline copy when the drive is unplugged.
 
 **Getting started.** [GETTING_STARTED.md](GETTING_STARTED.md) is the short walkthrough for both paths:
@@ -77,7 +77,7 @@ This kit describes a local-only system, with no cloud uploads, for organizing ev
 | Folder cabinet | `00 Inbox` … `80 Photos`, one numbered "drawer" per life area, with per-person subfolders |
 | Naming standard | `Person_Type_Date_Detail`, ID expiry dates (`EXP_YYYY-MM-DD`) in the name, Money files sorted by date |
 | Safe dedupe | SHA-256 exact matches only, moved to `To Review\For Deletion`, never deleted |
-| OCR | Scanned PDFs get a text layer (OCRmyPDF), with untouched originals kept in `To Review\OCR Originals` |
+| OCR | Page 1 of a typed scan is read locally with OCRia Nano and stored in the index. The PDF stays as it is |
 | Local index | SQLite FTS5 index of names, paths and document text (PDF, Word, Excel, PowerPoint, text) |
 | Search app | Desktop window with Search, Sort a folder and Expiring tabs, filters and a preview pane |
 | `sonar` / `ssort` | Terminal search with clickable results, and a "sort this folder" tool with preview/apply/undo |
@@ -164,8 +164,7 @@ The cabinet root is `%USERPROFILE%\Documents\Family`. The review area sits *outs
 └── README.md       ← your folder list + naming convention (source of truth)
 
 %USERPROFILE%\Documents\To Review
-├── For Deletion
-└── OCR Originals
+└── For Deletion
 ```
 
 The subfolders above are common starting examples, not a fixed list. The agent keeps the ones you need, drops the empty ones, and suggests others based on what it finds in your files.
@@ -187,7 +186,7 @@ The subfolders above are common starting examples, not a fixed list. The agent k
 | `75 <You>` | Your own papers that don't fit another drawer: school diplomas and transcripts, certificates, memberships, hobby and personal project files, letters and keepsakes | Start with one `Miscellaneous Personal Docs` folder. Split out a topic folder only once it has enough files to justify it |
 | `80 Photos` | Photos and scans of photos | By year with a topic word (`2025_Photos`, never just `2025`). Skipped by OCR |
 | `To Review\For Deletion` | Exact duplicates, installers, temp files, junk. **Nothing is ever deleted by the agent** | One subfolder per reason: `<folder> duplicates`, `Downloads junk`, `already-on-PC`. Relative paths are preserved |
-| `To Review\OCR Originals` | Untouched copies of PDFs from before OCR | Mirrors the cabinet paths. Clear it once you're happy with the OCR results |
+| `To Review\OCR Originals` | Leftover copies from the old text-layer OCR step | This workflow does not write here. Empty the folder yourself if you no longer need those copies |
 
 **Structure rules**
 - **Documents that never change get one folder; documents that repeat get a folder per year.** IDs, passports, birth certificates, a property deed or a will are one-time or rarely updated, so each type lives in a single folder and the newest version is easy to find (`10 Identity\Passports`). Taxes, statements, receipts, trips and payslips come every year, so they're grouped by year (`40 Money\Taxes\2025_Tax`, `15 Travel\2025`, `60 Work\Employers\<Employer>\Payslips\2025`), which keeps each year's packet together and lets you archive old years in one move. Travel uses a bare year because the parent folder already names the topic; payslips do the same under the `Payslips` folder. When in doubt, ask: will I get a new one of these next year? If yes, organize by year; if no, keep it in one folder.
@@ -292,9 +291,9 @@ These are corrections from a real multi-week cleanup. Put all of them in the age
 - Leave one-off files you can't identify as they are and add a `name:` exception rather than guessing a type or date.
 
 **OCR**
-- Skip `65 Learning` (books) and `80 Photos`. Skip `60 Work` too unless the human asks for it.
-- Always keep the untouched original in `To Review\OCR Originals`, with its relative path preserved.
-- Re-index after OCR. Don't claim that content search works until the index actually stores the extracted text.
+- Read page 1 only, with OCRia Nano through LiteParse (`lit parse --format text --target-pages 1 --ocr-backend ocria-nano`). Store that text on the index row. Leave the PDF unchanged.
+- Skip a PDF whose first page already has text. Skip `65 Learning` (books), `80 Photos`, and `60 Work` unless the human asks for Work. Also skip Job search, program files, driver's licenses, x-ray pages, and names that look like secrets. Handwriting is a human naming job.
+- The apply writes the text into the index, so search can see it without a second pass. A later re-index keeps that text while the file is unchanged. Don't claim content search works until the index row stores the text.
 
 **Agent behavior**
 - Agents sometimes stop to ask "Want me to continue?". For unattended runs, forbid that explicitly (see §10).
@@ -310,40 +309,35 @@ Open **PowerShell** (Windows Terminal or any terminal running a PowerShell tab) 
 # Python 3.11+ (3.12 recommended). Tick "Add python.exe to PATH" if using the python.org installer.
 winget install -e --id Python.Python.3.12
 
-# Tesseract OCR engine (UB Mannheim build)
-winget install -e --id UB-Mannheim.TesseractOCR
-
-# Ghostscript (OCRmyPDF needs it; also a fallback PDF renderer)
-winget install -e --id ArtifexSoftware.GhostScript
-
 # Optional: Git, to version the project scripts
 winget install -e --id Git.Git
 ```
 
-If `winget` isn't available, download the installers manually: python.org, the UB Mannheim Tesseract page (github.com/UB-Mannheim/tesseract/wiki) and ghostscript.com.
+If `winget` isn't available, download Python from python.org.
 
-**Add Tesseract and Ghostscript to PATH** if the installers didn't. Typical folders:
-- `C:\Program Files\Tesseract-OCR`
-- `C:\Program Files\gs\gs<version>\bin`
-
-Settings → System → About → Advanced system settings → Environment Variables → Path → New. Then **close and reopen** the terminal.
-
-**Python packages**
+**Python packages, then the local OCR model**
 
 ```powershell
 python -m pip install --upgrade pip
-python -m pip install ocrmypdf pymupdf pypdf pillow python-docx openpyxl python-pptx
+python -m pip install -r requirements.txt
 # optional: preview iPhone HEIC photos
 python -m pip install pillow-heif
+lit models pull ocria-nano
 ```
+
+`lit` is installed with LiteParse. If PowerShell cannot find it, call the copy in the Python Scripts folder:
+
+```powershell
+& "$([System.IO.Path]::GetDirectoryName((Get-Command python).Source))\Scripts\lit.exe" models pull ocria-nano
+```
+
+The model is about 50 MB and stays on this PC (`%LOCALAPPDATA%\liteparse\models\ocria-nano`). Weights are under the OCRia Nano model license, which `lit models pull` shows before the download. Household files are never uploaded. PDF preview in Sonar uses PyMuPDF.
 
 **Verify**
 
 ```powershell
 python --version                 # 3.11 or newer
-tesseract --version
-gswin64c -version
-ocrmypdf --version
+lit models list                  # ocria-nano@1.0.0
 python -c "import fitz, pypdf, docx, openpyxl, pptx, PIL; print('python libs OK')"
 python -c "import sqlite3; c=sqlite3.connect(':memory:'); c.execute('create virtual table t using fts5(x)'); print('FTS5 OK')"
 ```
@@ -378,7 +372,7 @@ The project folder holds the scripts, rules and logs. It is **not** the cabinet 
 │   ├── undo-manifest.ps1      reverse an undo log (dry-run default, -Apply)
 │   ├── check.ps1              audit one cabinet folder (calls sonar_index.py audit)
 │   ├── sonar_index.py         indexer + search + audit (reads config.json)
-│   ├── sonar_ocr.py           OCR plan/apply
+│   ├── sonar_ocr.py           page-1 OCRia Nano read into the index
 │   ├── sonar.py               terminal search (sonar)
 │   ├── sonar_app.pyw          desktop app
 │   ├── sonar_preview.py       preview renderer for the app
@@ -511,7 +505,7 @@ This organizes files *already on* the external drive. To copy new cabinet files 
 | Sort a messy folder | `ssort "$env:USERPROFILE\Downloads"` → review → `ssort --apply <plan.csv>` |
 | Undo a sort | `ssort --undo plans\undo-log-sort-<stamp>.csv` |
 | Audit a drawer | `.\scripts\check.ps1 -Folder "40 Money"` |
-| OCR new scans | `python scripts\sonar_ocr.py plan --folder "00 Inbox"`, then `apply --folder "00 Inbox" --yes`, then `sonar --reindex` |
+| OCR new scans | `python scripts\sonar_ocr.py plan --folder "00 Inbox"`, then `apply --folder "00 Inbox" --yes`. Page 1 text is written into the index. The PDF is not changed |
 | Open the app | Desktop shortcut **Sonar** |
 | Open the modern web UI | `python scripts\sonar_web.py` (opens your browser at `127.0.0.1`) |
 | Back up new cabinet files to an external drive | `python scripts\sonar_backup.py` (dry-run), then `--apply`. See [section 12](#12-automating-backups-to-an-external-drive) |
@@ -524,7 +518,6 @@ This organizes files *already on* the external drive. To copy new cabinet files 
 1. Open `To Review\For Deletion`. Each subfolder says why the files are there (`<folder> duplicates`, `Downloads junk`, `already-on-PC`).
 2. Spot-check a few files. Duplicates have a keeper at the path recorded in the undo log.
 3. When you're satisfied, delete the subfolder yourself (or move it to the Recycle Bin).
-4. Do the same with `To Review\OCR Originals` once you've confirmed that the OCR'd PDFs look right.
 
 **Expiry watch:** IDs carry `EXP_YYYY-MM-DD`, so `sonar --expiring` (or a monthly reminder from any scheduler or assistant) catches passports and licenses before they lapse.
 
@@ -582,10 +575,10 @@ If the destination index does not exist yet, the pre-backup re-index will create
 | Garbled characters (`â€™`) in PowerShell output or script errors | PS 5.1 reading a UTF-8 script without a BOM | Re-save the script as UTF-8 with BOM, or use PowerShell 7 |
 | Names with `’` won't match or move | Curly apostrophe | Normalize to `'` (lessons-learned rule) |
 | Brackets in names break moves | Wildcard parsing | Always use `-LiteralPath` |
-| `ocrmypdf: command not found` / Tesseract not found | Not on PATH | Add the Tesseract and Ghostscript `bin` folders to PATH and reopen the terminal. Check with `tesseract --version` |
-| OCR "page already has text" | Normal: `--skip-text` keeps existing text | Nothing to do. Mixed PDFs are OCR'd only on pages that need it |
-| OCR fails on a PDF | Encrypted or damaged | The original is kept and the error is logged. Unlock it or leave it |
-| Search doesn't find words inside a scan | Not OCR'd or not re-indexed | Run the OCR plan/apply, then `sonar --reindex` |
+| `lit` is not installed, or `ocria-nano` is missing from `lit models list` | LiteParse or the model was not installed | `python -m pip install liteparse`, then `lit models pull ocria-nano` |
+| OCR reads a typed scan poorly | Page is handwriting, a driver's license, or an x-ray | Leave that file for a human. The reader is for typed page-1 scans |
+| OCR fails on a PDF | Encrypted or damaged | The PDF is left unchanged and the error is logged. Unlock it or leave it |
+| Search doesn't find words inside a scan | Page 1 was not read into the index | Run the OCR plan/apply. Search uses the index row, not a text layer inside the PDF |
 | Word/Excel file "could not be read" | Corrupt file | Left untouched. Open it to check, and replace it from a backup if needed |
 | Collision: target already exists | Two different files want the same name | Check the hashes. If they differ, keep both with a meaningful suffix (`Filed-Scan`), never `Copy` |
 | Agent says "done" but the audit still flags files | It skipped the definition of done | Reply: "Run check.ps1, open issues for every flag, write the session log, update STATUS, release the lock. Then report." |

@@ -9,6 +9,6 @@ pillow
 # Optional: preview iPhone HEIC photos
 # pillow-heif
 
-# Optional: OCR for scanned PDFs (sonar_ocr.py). Also needs the Tesseract and
-# Ghostscript programs installed and on PATH (see README section 6).
-# ocrmypdf
+# Optional: page-1 OCR for scanned PDFs (sonar_ocr.py).
+# After install, download the local model once: lit models pull ocria-nano
+liteparse
